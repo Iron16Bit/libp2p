@@ -17,10 +17,10 @@ const RELAY_LIBP2P_PORT = 42869; // Must match the relay's LIBP2P_PORT
 const RELAY_HTTP_PORT = 33992; // Must match the relay's HTTP_PORT
 
 // Construct the relay multiaddr - you'll need to update this with the actual peer ID after first run
-const relayAddr = `/ip4/${RELAY_HOST}/tcp/${RELAY_LIBP2P_PORT}/ws/p2p/RELAY_PEER_ID_PLACEHOLDER`;
+const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWS8Hx1gP6cy2hvLzA6x8YxA3AnZKUi9Ji61m69EcTkKis`;
 
 // HTTP API base URL
-const HTTP_API_BASE = `http://${RELAY_HOST}:${RELAY_HTTP_PORT}`;
+const HTTP_API_BASE = `http://130.110.13.183:8080`;
 
 const DOM = {
   // Topic selection section

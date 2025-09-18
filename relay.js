@@ -19,26 +19,10 @@ config();
 const PUBLIC_IP = process.env.PUBLIC_IP || "localhost"; // Set this to your server's public IP
 const LIBP2P_PORT = process.env.LIBP2P_PORT || 42869;
 const HTTP_PORT = process.env.HTTP_PORT || 33992;
-const PEER_ID_FILE = "./relay-peer-id.json";
 
 // Load or create persistent peer ID
-let peerId;
-if (existsSync(PEER_ID_FILE)) {
-  try {
-    const peerIdData = JSON.parse(readFileSync(PEER_ID_FILE, "utf8"));
-    peerId = await createEd25519PeerId(peerIdData);
-    console.log(`Loaded existing peer ID: ${peerId.toString()}`);
-  } catch (error) {
-    console.log("Failed to load peer ID, creating new one:", error.message);
-    peerId = await createEd25519PeerId();
-    writeFileSync(PEER_ID_FILE, JSON.stringify(peerId.toJSON()));
-    console.log(`Created new peer ID: ${peerId.toString()}`);
-  }
-} else {
-  peerId = await createEd25519PeerId();
-  writeFileSync(PEER_ID_FILE, JSON.stringify(peerId.toJSON()));
-  console.log(`Created new peer ID: ${peerId.toString()}`);
-}
+let peerId = await createEd25519PeerId();
+console.log(`Created new peer ID: ${peerId.toString()}`);
 
 // Keep track of connected peers
 const connectedPeers = new Map();
