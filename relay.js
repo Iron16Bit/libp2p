@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 
+import { config } from "dotenv";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { circuitRelayServer } from "@libp2p/circuit-relay-v2";
@@ -10,6 +11,9 @@ import { createLibp2p } from "libp2p";
 import { createServer } from "http";
 import { createEd25519PeerId } from "@libp2p/peer-id-factory";
 import { writeFileSync, readFileSync, existsSync } from "fs";
+
+// Load environment variables from .env file
+config();
 
 // Configuration - modify these for your deployment
 const PUBLIC_IP = process.env.PUBLIC_IP || "localhost"; // Set this to your server's public IP

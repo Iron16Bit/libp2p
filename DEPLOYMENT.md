@@ -18,9 +18,23 @@ This guide explains how to deploy the libp2p browser pubsub example on a public 
 The relay is now configured to:
 - Use a persistent peer ID (saved in `relay-peer-id.json`)
 - Listen on all interfaces (0.0.0.0)
-- Accept environment variable configuration
+- Load configuration from `.env` file or environment variables
 
-### Option A: Environment Variables
+### Option A: Using .env file (Recommended)
+
+1. Copy the example configuration:
+```bash
+cp .env.example .env
+```
+
+2. Edit `.env` with your server's details:
+```bash
+PUBLIC_IP=YOUR_SERVER_PUBLIC_IP
+LIBP2P_PORT=42869
+HTTP_PORT=33992
+```
+
+### Option B: Environment Variables
 
 ```bash
 # Set your public IP
