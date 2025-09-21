@@ -1,3 +1,16 @@
+# Dependencies
 node_modules/
+peer/node_modules/
+relay/node_modules/
+
+# Logs
 .vscode/
 .github/
+
+# 
+README.pdf
+peer/README.pdf
+relay/README.pdf
+
+# .env file
+relay/.env

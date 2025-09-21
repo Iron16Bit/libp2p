@@ -1,0 +1,37 @@
+{
+  "name": "@libp2p/browser-peer",
+  "version": "1.0.0",
+  "description": "LibP2P browser peer with topic-based pubsub messaging",
+  "type": "module",
+  "main": "peer.js",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-gossipsub": "^14.0.0",
+    "@chainsafe/libp2p-noise": "^16.0.0",
+    "@chainsafe/libp2p-yamux": "^7.0.0",
+    "@libp2p/circuit-relay-v2": "^3.0.0",
+    "@libp2p/dcutr": "^2.0.0",
+    "@libp2p/identify": "^3.0.0",
+    "@libp2p/webrtc": "^5.0.0",
+    "@libp2p/websockets": "^9.0.0",
+    "@multiformats/multiaddr": "^12.3.1",
+    "libp2p": "^2.0.0",
+    "uint8arrays": "^5.1.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.3"
+  },
+  "keywords": [
+    "libp2p",
+    "peer-to-peer",
+    "browser",
+    "pubsub",
+    "webrtc"
+  ],
+  "license": "Apache-2.0 OR MIT"
+}

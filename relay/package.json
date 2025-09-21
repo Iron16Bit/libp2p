@@ -1,0 +1,28 @@
+{
+  "name": "@libp2p/relay-server",
+  "version": "1.0.0",
+  "description": "LibP2P relay server with peer discovery API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@chainsafe/libp2p-noise": "^16.0.0",
+    "@chainsafe/libp2p-yamux": "^7.0.0",
+    "@libp2p/circuit-relay-v2": "^3.0.0",
+    "@libp2p/identify": "^3.0.0",
+    "@libp2p/peer-id-factory": "^4.2.4",
+    "@libp2p/websockets": "^9.0.0",
+    "dotenv": "^16.4.5",
+    "libp2p": "^2.0.0"
+  },
+  "keywords": [
+    "libp2p",
+    "relay",
+    "peer-to-peer",
+    "websocket"
+  ],
+  "license": "Apache-2.0 OR MIT"
+}
