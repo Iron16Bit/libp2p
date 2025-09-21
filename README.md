@@ -11,3 +11,5 @@ The `relay/` folder contains a libp2p relay server that also works as rendezvous
 ## Peer
 
 A browser peer connects to the relay and asks for other peers that are interested in the same topic as him. Once it receives their addresses by the server, it directly connects to them.
+
+**TODO:** Do not make a peer keep checking for new peers. When a new peer joins the topic, it announces himself and all other peers interested in the same topic will connect to him (or viceversa).
