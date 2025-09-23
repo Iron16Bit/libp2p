@@ -12,7 +12,7 @@ import { createLibp2p } from "libp2p";
 import { fromString, toString } from "uint8arrays";
 
 // Put here the relay peer's addresses:
-const relayAddr = ``;
+const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWGUrXaPW4iCSUbqYb9NBusrRsYombqpMskxeTy5BjZJ7Z`;
 
 // --------- INTERACTION WITH HTML ---------
 const DOM = {
