@@ -5,50 +5,24 @@ This is the browser client for the LibP2P pubsub example.
 ## Installation
 
 ```bash
-cd peer
-npm install
+npm i
 ```
 
 ## Running
 
-Start the development server:
-
-```bash
-npm start
-```
-
-This will start a Vite development server and open the browser peer interface.
-
-## Building
-
-Build for production:
-
-```bash
-npm run build
-```
-
-Preview the production build:
-
-```bash
-npm run preview
-```
-
-## Usage
-
 1. Make sure the relay server is running
-2. Open the browser interface
-3. Connect to peers and start messaging on topics
-4. Use WebRTC for direct peer-to-peer communication
+2. Paste the relay's multiaddr in: 
 
-## Configuration
+```javascript
+const relayAddr = ``;
+```
 
-The relay server address is configurable in `peer.js`. By default it connects to:
-- `ws://localhost:63000` (local relay)
+3. Start the peer:
 
-## Features
+```bash
+npm run dev
+```
 
-- Circuit relay connection via WebSocket
-- WebRTC direct connections (DCUTR)
-- Topic-based pubsub messaging
-- Peer discovery and registration
-- Real-time messaging interface
+4. Open the browser interface
+5. Choose a topic and connect to the relay
+6. Directly communicate with peers interested to the same topic

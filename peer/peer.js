@@ -12,9 +12,9 @@ import { createLibp2p } from "libp2p";
 import { fromString, toString } from "uint8arrays";
 
 // Put here the relay peer's addresses:
-const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWS8Hx1gP6cy2hvLzA6x8YxA3AnZKUi9Ji61m69EcTkKis`;
-const HTTP_API_BASE = `http://130.110.13.183:8080`;
+const relayAddr = ``;
 
+// --------- INTERACTION WITH HTML ---------
 const DOM = {
     // Topic selection section
     topicSelection: () => document.getElementById("topic-selection"),
@@ -43,24 +43,20 @@ const appendOutput = (line) => {
 };
 const clean = (line) => line.replaceAll("\n", "");
 
+// --------- INITIALIZATION ---------
+
 const libp2p = await createLibp2p({
     addresses: {
         listen: ["/p2p-circuit", "/webrtc"],
     },
     transports: [
-        // the WebSocket transport lets us dial a local relay
         webSockets({
-            // this allows non-secure WebSocket connections for purposes of the demo
-            filter: filters.all,
+        filter: filters.all,
         }),
-        // support dialing/listening on WebRTC addresses
         webRTC(),
-        // support dialing/listening on Circuit Relay addresses
         circuitRelayTransport(),
     ],
-    // A connection encrypter is necessary to dial the relay
     connectionEncrypters: [noise()],
-    // A stream muxer is necessary to dial the relay
     streamMuxers: [yamux()],
     connectionGater: {
         denyDialMultiaddr: () => {
@@ -69,13 +65,33 @@ const libp2p = await createLibp2p({
     },
     services: {
         identify: identify(),
-        pubsub: gossipsub(),
+        pubsub: gossipsub({
+            // Enable peer exchange for better discovery
+            enablePeerExchange: true,
+            // Reduce heartbeat interval for faster discovery
+            heartbeatInterval: 1000,
+            // Enable flood publishing to ensure message delivery
+            floodPublish: true,
+            // Allow publishing even with minimal mesh
+            scoreParams: {
+                topics: {},
+                topicScoreCap: 10,
+                appSpecificScore: () => 0,
+                decayInterval: 12000,
+                decayToZero: 0.01,
+            },
+            dLow: 4,
+            dHigh: 12,
+            dScore: 4,
+            dOut: 2,
+            dLazy: 6,
+            // Ensure messages are published even with few peers
+            allowPublishToZeroPeers: true,
+            }),
         dcutr: dcutr(),
     },
 });
 
-let discoveryActive = false;
-let discoveryInterval;
 let selectedTopic = null;
 
 // Initialize the app but don't connect until topic is selected
@@ -86,148 +102,106 @@ async function initializeLibp2p() {
         await libp2p.dial(multiaddr(relayAddr));
         appendOutput(`Connected to relay`);
 
-        // Register ourselves with the relay and start discovery
-        setTimeout(async () => {
-            await registerWithRelay();
-            await startHttpDiscovery();
-        }, 2000);
+        // Wait a moment for the connection to stabilize
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Subscribe to our discovery topic first
+        const discoveryTopic = `__discovery__${libp2p.peerId.toString()}`;
+        libp2p.services.pubsub.subscribe(discoveryTopic);
+        appendOutput(`Subscribed to discovery topic`);
+
+        // Subscribe to the main topic
+        libp2p.services.pubsub.subscribe(selectedTopic);
+        appendOutput(`Auto-subscribed to topic '${selectedTopic}'`);
+
+        // Wait for GossipSub mesh to stabilize
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        appendOutput(`GossipSub mesh stabilization complete`);
+
+        // Enable message sending
+        DOM.sendTopicMessageInput().disabled = false;
+        DOM.sendTopicMessageButton().disabled = false;
         } catch (error) {
         appendOutput(`Failed to connect to relay: ${error.message}`);
         }
     }
 }
 
-async function registerWithRelay() {
-    try {
-        const publicWebRTCAddr = await discoverPublicWebRTCAddress();
+// ---------- MESSAGE HANDLING ---------
 
-        const allMultiaddrs = libp2p.getMultiaddrs().map((ma) => ma.toString());
-        if (publicWebRTCAddr) {
-            allMultiaddrs.push(publicWebRTCAddr);
-        }
-
-        const peerData = {
-            multiaddrs: allMultiaddrs,
-            publicWebRTCAddr: publicWebRTCAddr,
-            topic: selectedTopic,
-            timestamp: Date.now(),
-        };
-
-        const response = await fetch(`${HTTP_API_BASE}/register/${libp2p.peerId}`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(peerData),
-        });
-
-        if (response.ok) {
-            appendOutput(`Registered with relay for topic '${selectedTopic}'`);
-        } else {
-            appendOutput(`Failed to register with relay: ${response.status}`);
-        }
-    } catch (error) {
-        appendOutput(`Registration error: ${error.message}`);
-    }
-}
-
-async function discoverPublicWebRTCAddress() {
-    try {
-        const webrtcViaCircuitAddr = `${relayAddr}/p2p-circuit/webrtc/p2p/${libp2p.peerId}`;
-        return webrtcViaCircuitAddr;
-    } catch (error) {
-        return null;
-    }
-}
-
-async function startHttpDiscovery() {
-    if (discoveryActive) return;
-    discoveryActive = true;
-
-    appendOutput(`Starting peer discovery...`);
-
-    const discoverPeers = async () => {
-        try {
-        const response = await fetch(`${HTTP_API_BASE}/peers`);
-        if (!response.ok) {
-            return;
-        }
-
-        const data = await response.json();
-
-        // Filter peers by topic and try to connect to each one we're not already connected to
-        for (const peerInfo of data.peers) {
-            const remotePeerId = peerInfo.peerId;
-
-            // Skip ourselves
-            if (remotePeerId === libp2p.peerId.toString()) continue;
-
-            // Skip peers with different topics
-            if (peerInfo.topic !== selectedTopic) continue;
-
-            // Check existing connections to this peer
-            const connections = libp2p.getConnections();
-            const peerConnections = connections.filter(
-            (conn) => conn.remotePeer.toString() === remotePeerId
-            );
-
-            // Check if we already have a WebRTC connection
-            const hasWebRTC = peerConnections.some((conn) =>
-            conn.remoteAddr.toString().includes("/webrtc")
-            );
-
-            if (hasWebRTC) {
-            continue;
-            }
-
-            try {
-            // Try public WebRTC address first if available
-            if (peerInfo.publicWebRTCAddr) {
-                try {
-                await libp2p.dial(multiaddr(peerInfo.publicWebRTCAddr));
-                appendOutput(
-                    `✓ Connected to peer via WebRTC (topic: ${selectedTopic})`
-                );
-                continue; // Skip circuit relay attempt since we got WebRTC working
-                } catch (webrtcError) {
-                // Silent fallback to circuit relay
-                }
-            }
-
-            // If no WebRTC connection exists and no publicWebRTCAddr, try circuit relay
-            if (peerConnections.length === 0) {
-                const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${remotePeerId}`;
-                await libp2p.dial(multiaddr(circuitAddr));
-                appendOutput(
-                `Connected to peer via relay (topic: ${selectedTopic})`
-                );
-            }
-            } catch (error) {
-            // Silent error handling
-            }
-        }
-        } catch (error) {
-        // Silent error handling
-        }
-    };
-
-    // Initial discovery
-    await discoverPeers();
-
-    // Periodic discovery every 10 seconds
-    discoveryInterval = setInterval(discoverPeers, 10000);
-    }
-
-    // Handle pubsub messages
-    libp2p.services.pubsub.addEventListener("message", (event) => {
+libp2p.services.pubsub.addEventListener("message", (event) => {
     const topic = event.detail.topic;
     const message = toString(event.detail.data);
 
+    // Check if this is a discovery message
+    if (topic.startsWith(`__discovery__${libp2p.peerId.toString()}`)) {
+        try {
+        const discoveryData = JSON.parse(message);
+        handleDiscoveryMessage(discoveryData);
+        return;
+        } catch (error) {
+        // Not a valid discovery message, ignore
+        }
+    }
+
+    // Regular topic message
     appendOutput(`Message received on topic '${topic}'`);
     appendOutput(message);
 });
 
-// Auto-discover and connect to peers
+// Handle discovery messages from the relay
+async function handleDiscoveryMessage(discoveryData) {
+    if (discoveryData.type === "peer-discovery") {
+        appendOutput(
+        `🔍 Discovery: Found ${discoveryData.peers.length} peers for topic '${discoveryData.topic}'`
+        );
+
+        for (const peerInfo of discoveryData.peers) {
+        const peerId = peerInfo.peerId;
+
+        // Skip if we're already connected
+        const connections = libp2p.getConnections(peerId);
+        if (connections.length > 0) continue;
+
+        appendOutput(`Attempting to connect to discovered peer: ${peerId}`);
+
+        // Try connecting to each multiaddr
+        let connected = false;
+        for (const addr of peerInfo.multiaddrs) {
+            try {
+            await libp2p.dial(multiaddr(addr));
+            appendOutput(`✓ Connected to peer: ${peerId}`);
+            connected = true;
+            break;
+            } catch (error) {
+            // Try next address
+            }
+        }
+
+        if (!connected) {
+            appendOutput(`Failed to connect to peer: ${peerId}`);
+        }
+        }
+    } else if (discoveryData.type === "new-peer") {
+        const peerInfo = discoveryData.peer;
+        appendOutput(
+        `🆕 New peer joined topic '${discoveryData.topic}': ${peerInfo.peerId}`
+        );
+
+        // Try to connect to the new peer
+        const connections = libp2p.getConnections(peerInfo.peerId);
+        if (connections.length === 0) {
+        try {
+            await libp2p.dial(multiaddr(peerInfo.multiaddrs[0]));
+            appendOutput(`✓ Connected to new peer: ${peerInfo.peerId}`);
+        } catch (error) {
+            appendOutput(`Failed to connect to new peer: ${peerInfo.peerId}`);
+        }
+        }
+    }
+}
+
+// Handle peer discovery through GossipSub
 libp2p.addEventListener("peer:discovery", async (event) => {
     const peerId = event.detail.id;
 
@@ -243,38 +217,51 @@ libp2p.addEventListener("peer:discovery", async (event) => {
     try {
         appendOutput(`Discovered peer: ${peerId}, attempting connection...`);
 
-        // Try multiple connection strategies
-        const strategies = [
-        peerId, // Direct connection
-        multiaddr(`/p2p-circuit/p2p/${peerId}`), // Via circuit relay
-        ];
-
-        let connected = false;
-        for (const strategy of strategies) {
-        try {
-            await libp2p.dial(strategy);
-            appendOutput(`Successfully connected to peer: ${peerId}`);
-            connected = true;
-            break;
-        } catch (error) {
-            appendOutput(
-            `Connection strategy failed for ${peerId}: ${error.message}`
-            );
-        }
-        }
-
-        if (!connected) {
-        appendOutput(`All connection strategies failed for peer: ${peerId}`);
-        }
+        // Try to connect directly first
+        await libp2p.dial(peerId);
+        appendOutput(`✓ Connected to discovered peer: ${peerId}`);
     } catch (error) {
-        appendOutput(`Failed to connect to ${peerId}: ${error.message}`);
+        // Try via circuit relay as fallback
+        try {
+        const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${peerId}`;
+        await libp2p.dial(multiaddr(circuitAddr));
+        appendOutput(`✓ Connected to peer via relay: ${peerId}`);
+        } catch (relayError) {
+        appendOutput(`Failed to connect to ${peerId}: ${relayError.message}`);
+        }
+    }
+});
+
+// Listen for pubsub peer joins - this is key for peer discovery
+libp2p.services.pubsub.addEventListener("subscription-change", (event) => {
+    const { peerId, subscriptions } = event.detail;
+
+    // Check if this peer subscribed to our topic
+    const topicSubscriptions = subscriptions.filter(
+        (sub) => sub.topic === selectedTopic && sub.subscribe
+    );
+
+    if (topicSubscriptions.length > 0) {
+        appendOutput(`Peer ${peerId} joined topic '${selectedTopic}'`);
+
+        // Try to establish direct connection if not already connected
+        const connections = libp2p.getConnections(peerId);
+        if (connections.length === 0) {
+        // Try direct connection first
+        libp2p.dial(peerId).catch(() => {
+            // Fallback to relay connection
+            const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${peerId}`;
+            libp2p.dial(multiaddr(circuitAddr)).catch(() => {
+            // Silent fail
+            });
+        });
+        }
     }
 });
 
 DOM.peerId().innerText = libp2p.peerId.toString();
 
 function updatePeerList() {
-    // Update connections list
     const peerList = libp2p.getPeers().map((peerId) => {
         const el = document.createElement("li");
         el.textContent = peerId.toString();
@@ -284,12 +271,10 @@ function updatePeerList() {
         for (const conn of libp2p.getConnections(peerId)) {
         const addr = document.createElement("li");
         addr.textContent = conn.remoteAddr.toString();
-
         addrList.appendChild(addr);
         }
 
         el.appendChild(addrList);
-
         return el;
     });
     DOM.peerConnectionsList().replaceChildren(...peerList);
@@ -301,13 +286,18 @@ libp2p.addEventListener("connection:open", async (event) => {
 
     // Check if this is a WebRTC connection
     if (connection.remoteAddr.toString().includes("/webrtc")) {
-        appendOutput(`✓ WebRTC connection established`);
+        appendOutput(
+        `✓ WebRTC connection established with ${connection.remotePeer}`
+        );
+    } else {
+        appendOutput(`✓ Connection established with ${connection.remotePeer}`);
     }
 
     updatePeerList();
 });
 
 libp2p.addEventListener("connection:close", (event) => {
+    appendOutput(`Connection closed with ${event.detail.remotePeer}`);
     updatePeerList();
 });
 
@@ -342,24 +332,8 @@ DOM.connectButton().onclick = async () => {
     DOM.topicSelection().style.display = "none";
     DOM.mainInterface().style.display = "block";
 
-    // Auto-fill the subscribe topic input with selected topic (if it exists)
-    const subscribeInput = document.getElementById("subscribe-topic-input");
-    if (subscribeInput) {
-        subscribeInput.value = topic;
-    }
-
     // Connect to relay and start discovery
     await initializeLibp2p();
-
-    // Auto-subscribe to the selected topic after a short delay
-    setTimeout(() => {
-        libp2p.services.pubsub.subscribe(topic);
-        appendOutput(`Auto-subscribed to topic '${topic}'`);
-
-        // Enable message sending
-        DOM.sendTopicMessageInput().disabled = undefined;
-        DOM.sendTopicMessageButton().disabled = undefined;
-    }, 3000);
 };
 
 // Allow Enter key to connect
@@ -378,21 +352,40 @@ DOM.sendTopicMessageInput().addEventListener("keypress", (event) => {
 
 // Send message to topic
 DOM.sendTopicMessageButton().onclick = async () => {
-    const topic = selectedTopic; // Use the selected topic instead of reading from input
+    const topic = selectedTopic;
     const message = DOM.sendTopicMessageInput().value;
+
+    // Debug: Check current subscriptions
+    const subscribers = libp2p.services.pubsub.getSubscribers(topic);
+    const connectedPeers = libp2p.getPeers();
+
     appendOutput(`Sending message '${clean(message)}'`);
+    appendOutput(`Connected peers: ${connectedPeers.length}`);
+    appendOutput(`Topic subscribers: ${subscribers.length}`);
 
     try {
+        // Force publish the message even if no subscribers are detected
         await libp2p.services.pubsub.publish(topic, fromString(message));
         DOM.sendTopicMessageInput().value = "";
+        appendOutput(`Message sent successfully!`);
     } catch (error) {
         appendOutput(`Failed to publish message: ${error.message}`);
+
+        // Try alternative approach: wait a moment and retry
+        try {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await libp2p.services.pubsub.publish(topic, fromString(message));
+        DOM.sendTopicMessageInput().value = "";
+        appendOutput(`Message sent on retry!`);
+        } catch (retryError) {
+        appendOutput(`Retry also failed: ${retryError.message}`);
+        }
     }
 };
 
 // Update topic peers
 setInterval(() => {
-    if (!selectedTopic) return; // Don't update if no topic selected yet
+    if (!selectedTopic) return;
 
     const peerList = libp2p.services.pubsub
         .getSubscribers(selectedTopic)

@@ -17,7 +17,7 @@ This guide explains how to deploy the libp2p browser pubsub example on a public 
 The relay is now configured to:
 - Listen on all interfaces (0.0.0.0)
 - Load configuration from `.env` file or environment variables: Create an `.env` with your server's details:
-- 
+  
 ```bash
 PUBLIC_IP=YOUR_SERVER_PUBLIC_IP
 LIBP2P_PORT=42869
@@ -36,9 +36,8 @@ Copy the peer ID for the next step.
 
 ## Step 4: Update the Client Configuration
 
-Edit `peer.js` and replace the placeholder:
+Edit `peer.js` and paste the relay's multiaddress:
 
 ```javascript
-// Replace RELAY_PEER_ID_PLACEHOLDER with your actual peer ID
-const relayAddr = `/ip4/${RELAY_HOST}/tcp/${RELAY_LIBP2P_PORT}/ws/p2p/YOUR_ACTUAL_PEER_ID`;
+const relayAddr = ``;
 ```
