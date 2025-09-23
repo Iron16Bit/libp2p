@@ -14,12 +14,10 @@
     "@chainsafe/libp2p-yamux": "^7.0.0",
     "@libp2p/circuit-relay-v2": "^3.0.0",
     "@libp2p/identify": "^3.0.0",
-    "@libp2p/kad-dht": "^14.0.0",
     "@libp2p/peer-id-factory": "^4.2.4",
     "@libp2p/websockets": "^9.0.0",
     "dotenv": "^16.4.5",
-    "libp2p": "^2.0.0",
-    "multiformats": "^13.0.0"
+    "libp2p": "^2.0.0"
   },
   "keywords": [
     "libp2p",

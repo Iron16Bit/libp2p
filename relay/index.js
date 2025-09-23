@@ -9,7 +9,6 @@ import { webSockets } from "@libp2p/websockets";
 import * as filters from "@libp2p/websockets/filters";
 import { createLibp2p } from "libp2p";
 import { createEd25519PeerId } from "@libp2p/peer-id-factory";
-import { kadDHT } from "@libp2p/kad-dht";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 
 // Load environment variables from .env file
@@ -66,12 +65,6 @@ const server = await createLibp2p({
       dScore: 2,
       dOut: 1,
       dLazy: 4,
-    }),
-    dht: kadDHT({
-      // Enable DHT server mode
-      server: true,
-      // Allow LAN connections for local testing
-      allowQueryWithZeroPeers: true,
     }),
   },
 });

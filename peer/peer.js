@@ -232,7 +232,7 @@ libp2p.addEventListener("peer:discovery", async (event) => {
     }
 });
 
-// Listen for pubsub peer joins - this is key for peer discovery
+// Listen for pubsub peer joins
 libp2p.services.pubsub.addEventListener("subscription-change", (event) => {
     const { peerId, subscriptions } = event.detail;
 
@@ -252,7 +252,7 @@ libp2p.services.pubsub.addEventListener("subscription-change", (event) => {
             // Fallback to relay connection
             const circuitAddr = `${relayAddr}/p2p-circuit/p2p/${peerId}`;
             libp2p.dial(multiaddr(circuitAddr)).catch(() => {
-            // Silent fail
+                // Silent fail
             });
         });
         }
@@ -280,7 +280,7 @@ function updatePeerList() {
     DOM.peerConnectionsList().replaceChildren(...peerList);
 }
 
-// update peer connections
+// Update peer connections
 libp2p.addEventListener("connection:open", async (event) => {
     const connection = event.detail;
 
@@ -301,7 +301,7 @@ libp2p.addEventListener("connection:close", (event) => {
     updatePeerList();
 });
 
-// update listening addresses
+// Update listening addresses
 libp2p.addEventListener("self:peer:update", () => {
     const multiaddrs = libp2p.getMultiaddrs().map((ma) => {
         const el = document.createElement("li");
