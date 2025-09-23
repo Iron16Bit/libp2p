@@ -10,12 +10,133 @@ import * as filters from "@libp2p/websockets/filters";
 import { createLibp2p } from "libp2p";
 import { createEd25519PeerId } from "@libp2p/peer-id-factory";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
+import dgram from "dgram";
 
 // Load environment variables from .env file
 config();
 
-const PUBLIC_IP = process.env.PUBLIC_IP || "localhost";
 const LIBP2P_PORT = process.env.LIBP2P_PORT || 4003;
+
+// STUN server configuration
+const STUN_SERVERS = [
+  "stun.l.google.com:19302",
+  "stun1.l.google.com:19302",
+  "stun2.l.google.com:19302",
+  "stun.cloudflare.com:3478",
+];
+
+function parseSTUNResponse(data) {
+  if (data.length < 20) return null;
+
+  // Check if it's a STUN success response
+  if (data[0] !== 0x01 || data[1] !== 0x01) return null;
+
+  let offset = 20;
+  while (offset < data.length) {
+    const type = data.readUInt16BE(offset);
+    const length = data.readUInt16BE(offset + 2);
+
+    // XOR-MAPPED-ADDRESS attribute (0x0020)
+    if (type === 0x0020 && length >= 8) {
+      const family = data.readUInt16BE(offset + 5);
+      const port = data.readUInt16BE(offset + 6) ^ 0x2112;
+
+      if (family === 0x01) {
+        // IPv4
+        const ip = [
+          data[offset + 8] ^ 0x21,
+          data[offset + 9] ^ 0x12,
+          data[offset + 10] ^ 0xa4,
+          data[offset + 11] ^ 0x42,
+        ].join(".");
+        return ip;
+      }
+    }
+
+    // MAPPED-ADDRESS attribute (0x0001) - fallback
+    if (type === 0x0001 && length >= 8) {
+      const family = data.readUInt16BE(offset + 5);
+      if (family === 0x01) {
+        // IPv4
+        const ip = [
+          data[offset + 8],
+          data[offset + 9],
+          data[offset + 10],
+          data[offset + 11],
+        ].join(".");
+        return ip;
+      }
+    }
+
+    offset += 4 + length;
+  }
+
+  return null;
+}
+
+async function getPublicIP() {
+  for (const stunServer of STUN_SERVERS) {
+    try {
+      console.log(`Trying STUN server: ${stunServer}`);
+
+      const [host, portStr] = stunServer.split(":");
+      const port = parseInt(portStr);
+
+      const publicIP = await new Promise((resolve, reject) => {
+        const client = dgram.createSocket("udp4");
+
+        // STUN Binding Request
+        const request = Buffer.alloc(20);
+        request.writeUInt16BE(0x0001, 0); // Message Type: Binding Request
+        request.writeUInt16BE(0x0000, 2); // Message Length
+        request.writeUInt32BE(0x2112a442, 4); // Magic Cookie
+
+        // Transaction ID (96 bits)
+        for (let i = 8; i < 20; i++) {
+          request[i] = Math.floor(Math.random() * 256);
+        }
+
+        const timeout = setTimeout(() => {
+          client.close();
+          reject(new Error("STUN request timeout"));
+        }, 5000);
+
+        client.on("message", (data) => {
+          clearTimeout(timeout);
+          client.close();
+
+          const ip = parseSTUNResponse(data);
+          if (ip) {
+            resolve(ip);
+          } else {
+            reject(new Error("Could not parse STUN response"));
+          }
+        });
+
+        client.on("error", (err) => {
+          clearTimeout(timeout);
+          client.close();
+          reject(err);
+        });
+
+        client.send(request, port, host);
+      });
+
+      console.log(`✓ Public IP detected: ${publicIP}`);
+      return publicIP;
+    } catch (error) {
+      console.log(`Failed with ${stunServer}: ${error.message}`);
+      continue;
+    }
+  }
+
+  console.log("All STUN servers failed, using localhost");
+  return "localhost";
+}
+
+// Get public IP before starting the server
+console.log("Detecting public IP address...");
+const PUBLIC_IP = await getPublicIP();
 
 // Create peer ID
 const peerId = await createEd25519PeerId();
@@ -226,7 +347,3 @@ console.log(
   "Relay listening on multiaddr(s): ",
   server.getMultiaddrs().map((ma) => ma.toString())
 );
-console.log(
-  `Public relay multiaddr: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
-);
-console.log("Relay server with GossipSub discovery hub is now active");
