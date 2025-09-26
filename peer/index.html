@@ -5,70 +5,128 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LibP2P Peer - Browser PubSub</title>
     <style>
-      label,
-      button {
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+      }
+      
+      h1, h2, h4 {
+        margin-top: 0;
+      }
+      
+      label, button {
         display: block;
         font-weight: bold;
         margin: 5px 0;
       }
+      
       div {
         margin-bottom: 20px;
       }
-      #send-section {
-        display: none;
-      }
+      
       input[type="text"] {
-        width: 800px;
+        width: 100%;
+        max-width: 800px;
+        padding: 8px;
+        box-sizing: border-box;
+      }
+      
+      button {
+        padding: 8px 16px;
+        cursor: pointer;
+      }
+      
+      hr {
+        margin: 20px 0;
+        border: 0;
+        border-top: 1px solid #ddd;
+      }
+      
+      .peer-item {
+        margin-bottom: 10px;
+        padding: 5px 0;
+      }
+      
+      .peer-nickname {
+        font-weight: bold;
+      }
+      
+      /* Chat Styling */
+      #chat-messages {
+        display: flex;
+        flex-direction: column;
+      }
+      
+      .sent-message {
+        background-color: #e1ffc7;
+        padding: 10px 15px;
+        margin: 5px 0;
+        border-radius: 10px;
+        align-self: flex-end;
+        max-width: 70%;
+      }
+      
+      .received-message {
+        background-color: #f0f0f0;
+        padding: 10px 15px;
+        margin: 5px 0;
+        border-radius: 10px;
+        align-self: flex-start;
+        max-width: 70%;
       }
     </style>
   </head>
   <body>
     <h1>LibP2P Peer - Browser PubSub</h1>
-    <p>This peer connects to a relay and enables topic-based messaging with other peers</p>
+    <p>This peer connects to a relay and enables secure direct messaging with other peers</p>
     
     <div id="topic-selection">
       <h2>Step 1: Choose your topic</h2>
       <label for="topic-input">Enter the topic you want to join:</label>
       <input type="text" id="topic-input" placeholder="my-topic" />
       <button id="connect-button">Connect to Topic</button>
-      <p><em>You will automatically connect to peers interested in the same topic</em></p>
+      <p><em>You will automatically discover peers interested in the same topic</em></p>
     </div>
 
     <div id="main-interface" style="display: none;">
-      <hr />
       <div>
         <h2>Node Status</h2>
-        <h4>PeerId</h4>
-        <p id="peer-id"></p>
-        <h4>Current Topic</h4>
-        <p id="current-topic"></p>
-
-        <h4>Listening Addresses</h4>
-        <ul id="listening-addresses">
-          <li>None</li>
-        </ul>
-
-        <h4>Connected Peers</h4>
-        <ul id="peer-connections">
-          <li>None</li>
-        </ul>
+        <div style="display: flex; gap: 20px;">
+          <div>
+            <h4>Your Nickname</h4>
+            <p id="nickname"><em>Connecting...</em></p>
+          </div>
+          <div>
+            <h4>PeerId</h4>
+            <p id="peer-id"></p>
+          </div>
+          <div>
+            <h4>Current Topic</h4>
+            <p id="current-topic"></p>
+          </div>
+        </div>
       </div>
       <hr />
-      <div>
-        <h2>PubSub Messaging</h2>
-        <h4>Topic Peers</h4>
+      
+      <!-- Peer Discovery Section - Hidden when in private chat -->
+      <div id="peer-discovery-section">
+        <h2>Topic Peers</h2>
+        <p>Click "Connect" next to a peer to request a private WebRTC chat connection:</p>
         <ul id="topic-peers">
           <li>None</li>
         </ul>
-
-        <label for="message">Send Message to Topic</label>
-        <input type="text" id="send-topic-message-input" placeholder="hello world" />
-        <button id="send-topic-message-button">Send</button>
       </div>
-      <hr />
-      <div>
-        <h2>Output</h2>
-        <pre id="output"></pre>
+      
+      <!-- Chat Section - Only shown when in private chat -->
+      <div id="chat-section" style="display: none;">
+        <h2 id="chat-header">Private Chat</h2>
+        <div id="chat-messages"></div>
+        <div style="display: flex; margin-top: 10px;">
+          <input type="text" id="chat-input" placeholder="Type your message..." style="flex: 1; margin-right: 10px;" />
+          <button id="chat-send-button">Send</button>
+        </div>
+        <button id="end-chat-button" style="margin-top: 10px; background-color: #f44336; color: white; border: none;">End Chat</button>
       </div>
     </div>
     <script type="module" src="./peer.js"></script>
