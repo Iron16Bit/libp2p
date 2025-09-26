@@ -46,10 +46,13 @@
       .peer-item {
         margin-bottom: 10px;
         padding: 5px 0;
+        display: flex;
+        align-items: center;
       }
       
       .peer-nickname {
         font-weight: bold;
+        margin-right: 10px;
       }
       
       /* Chat Styling */
@@ -112,8 +115,8 @@
       <!-- Peer Discovery Section - Hidden when in private chat -->
       <div id="peer-discovery-section">
         <h2>Topic Peers</h2>
-        <p>Click "Connect" next to a peer to request a private WebRTC chat connection:</p>
-        <ul id="topic-peers">
+        <p>Click "Connect" next to a peer to start a private WebRTC chat:</p>
+        <ul id="topic-peers" style="list-style-type: none; padding-left: 0;">
           <li>None</li>
         </ul>
       </div>
