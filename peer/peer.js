@@ -34,7 +34,7 @@ import {
 } from "./utils/ui.js";
 
 // Put here the relay peer's addresses:
-const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWNw47bgfb4udF1Rr1sGcKKJes7aADaf6wyvEy3u2hMgnN`;
+const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWRUG9zndMxkEHrBjgLXz42vue5u2fhXjq1sUqEnUesxDJ`;
 
 // Store for peer nicknames
 const peerNicknames = new Map(); // peerId -> nickname
