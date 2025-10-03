@@ -80,6 +80,27 @@ const generatePrivateTopic = (peerA, peerB) => {
 
 // --------- INITIALIZATION ---------
 
+function getFallbackIceServers() {
+  console.log("Using optimized ICE servers");
+  return {
+    iceServers: [
+      {
+        urls: "stun:stun.l.google.com:19302",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443",
+        username: "4589fdae907c33bd2c118a53",
+        credential: "valgBS8UTclPlsM1",
+      },
+      {
+        urls: "turn:global.relay.metered.ca:443?transport=tcp",
+        username: "4589fdae907c33bd2c118a53",
+        credential: "valgBS8UTclPlsM1",
+      },
+    ],
+  };
+}
+
 async function fetchTURNCredentials() {
   try {
     console.log("Fetching TURN credentials from Metered API");
@@ -94,44 +115,25 @@ async function fetchTURNCredentials() {
     const data = await response.json();
     console.log("Retrieved TURN credentials from Metered API");
 
-    if (!Array.isArray(data)) {
-      console.warn("API returned unexpected format, expected array");
+    if (!Array.isArray(data) || data.length === 0) {
+      console.warn("API returned unexpected format or empty array");
       return getFallbackIceServers();
     }
 
-    // Verify we got valid credentials
-    if (data.length === 0) {
-      console.warn("API returned empty array");
-      return getFallbackIceServers();
-    }
+    // Filter to only use the most reliable servers (limit to 3-4 servers)
+    const filteredServers = data.filter((server, index) => {
+      // Keep STUN servers and limit TURN servers
+      if (server.urls.startsWith("stun:")) return true;
+      if (server.urls.startsWith("turn:") && index < 4) return true;
+      return false;
+    });
 
-    console.log(`Got ${data.length} ICE servers from API`);
-    return { iceServers: data };
+    console.log(`Using ${filteredServers.length} ICE servers from API`);
+    return { iceServers: filteredServers };
   } catch (error) {
     console.error("Error fetching TURN credentials:", error);
     return getFallbackIceServers();
   }
-}
-
-function getFallbackIceServers() {
-  console.log("Using fallback ICE servers");
-  return {
-    iceServers: [
-      {
-        urls: "stun:stun.l.google.com:19302",
-      },
-      {
-        urls: "turn:a.relay.metered.ca:443",
-        username: "e8dd65b92ebc9b5e817dd9f7",
-        credential: "68n7BbYULzNW73bd",
-      },
-      {
-        urls: "turn:a.relay.metered.ca:443?transport=tcp",
-        username: "e8dd65b92ebc9b5e817dd9f7",
-        credential: "68n7BbYULzNW73bd",
-      },
-    ],
-  };
 }
 
 // Create libp2p with a function
@@ -151,7 +153,12 @@ async function createNode() {
           filter: filters.all,
         }),
         webRTC({
-          rtcConfiguration: iceServersConfig,
+          rtcConfiguration: {
+            ...iceServersConfig,
+            iceCandidatePoolSize: 4, // Reduce pool size for faster connection
+            bundlePolicy: "max-bundle",
+            rtcpMuxPolicy: "require",
+          },
         }),
         circuitRelayTransport(),
       ],
@@ -367,24 +374,22 @@ function setupLibp2pEventListeners() {
     if (connection.remoteAddr.toString().includes("/webrtc")) {
       log(`✓ WebRTC connection established with ${peerNickname}`);
 
-      // Add this code to check if TURN is being used
-      try {
-        setTimeout(() => {
-          if (connection._stat) {
-            const stats = connection._stat;
-            console.log("WebRTC connection stats:", stats);
-            log(`Connection type: ${stats.candidateType || "unknown"}`);
+      // Add connection quality monitoring
+      setTimeout(() => {
+        if (connection._stat) {
+          const stats = connection._stat;
+          console.log("WebRTC connection stats:", stats);
+          log(`Connection type: ${stats.candidateType || "unknown"}`);
+          log(`Local candidate: ${stats.localCandidateType || "unknown"}`);
+          log(`Remote candidate: ${stats.remoteCandidateType || "unknown"}`);
 
-            if (stats.candidateType === "relay") {
-              log(`✓ Using TURN server for this connection`);
-            } else {
-              log(`Direct WebRTC connection (no TURN needed)`);
-            }
+          if (stats.candidateType === "relay") {
+            log(`✓ Using TURN server for this connection`);
+          } else {
+            log(`Direct WebRTC connection (no TURN needed)`);
           }
-        }, 1000);
-      } catch (e) {
-        console.error("Error checking WebRTC stats:", e);
-      }
+        }
+      }, 2000); // Wait longer for stats to stabilize
     } else {
       log(`✓ Connection established with ${peerNickname}`);
     }
@@ -393,9 +398,23 @@ function setupLibp2pEventListeners() {
     await sendNicknameAnnouncement();
   });
 
+  // Add more detailed connection close logging
   libp2p.addEventListener("connection:close", (event) => {
-    const peerNickname = getNickname(event.detail.remotePeer.toString());
-    log(`Connection closed with ${peerNickname}`);
+    const connection = event.detail;
+    const peerNickname = getNickname(connection.remotePeer.toString());
+
+    // Log the reason for connection closure if available
+    const closeReason = connection.closeReason || "Unknown reason";
+    log(`Connection closed with ${peerNickname}: ${closeReason}`);
+
+    // If this was a WebRTC connection, log additional details
+    if (connection.remoteAddr.toString().includes("/webrtc")) {
+      console.log("WebRTC connection closed details:", {
+        remoteAddr: connection.remoteAddr.toString(),
+        direction: connection.direction,
+        timeline: connection.timeline,
+      });
+    }
   });
 }
 
@@ -674,7 +693,7 @@ setInterval(() => {
   if (DOM.topicPeerList() && !activePrivatePeer) {
     updateTopicPeers();
   }
-}, 500);
+}, 2000); // Changed from 500ms to 2000ms
 
 // Initialize libp2p function
 async function initializeLibp2p() {
