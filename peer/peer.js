@@ -771,20 +771,27 @@ async function initializeLibp2p() {
         }, 3000);
 
         // 4. Set up periodic presence broadcasts (every 5 seconds)
+        let attempts = 0;
         const discoveryInterval = setInterval(() => {
           const peers = libp2p.services.pubsub.getSubscribers(selectedTopic);
           log(`Periodic discovery check: ${peers.length} subscribers found`);
 
           if (peers.length <= 1) {
             // Only broadcast if we haven't found other peers yet
-            broadcastPresence();
+            if (attempts < 6) {
+              // cap attempts
+              broadcastPresence();
+              attempts++;
+            } else {
+              clearInterval(discoveryInterval);
+            }
           } else {
             // If we have peers, we can slow down the interval
             clearInterval(discoveryInterval);
             // Switch to a slower refresh rate
             setInterval(broadcastPresence, 30000);
           }
-        }, 5000);
+        }, 15000);
 
         // Start updating the peers list
         updateTopicPeers();
