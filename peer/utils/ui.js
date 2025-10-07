@@ -42,6 +42,13 @@ export const DOM = {
   chatSendButton: () => document.getElementById("chat-send-button"),
   chatHeader: () => document.getElementById("chat-header"),
   endChatButton: () => document.getElementById("end-chat-button"),
+
+  // Collaborative editor elements
+  editorSection: () => document.getElementById("editor-section"),
+  editorContainer: () => document.getElementById("editor-container"),
+  editorHeader: () => document.getElementById("editor-header"),
+  editorPeerList: () => document.getElementById("editor-peer-list"),
+  endEditorButton: () => document.getElementById("end-editor-button"),
 };
 
 // Default logger fallback
@@ -345,7 +352,7 @@ export function updateTopicPeers(context) {
     relayAddr,
     getNickname,
     requestPrivateConnection,
-    activatePrivateChat,
+    startCollaborativeSession, // Make sure this is destructured
     acceptConnectionRequest,
     log = defaultLog,
   } = context;
@@ -357,7 +364,6 @@ export function updateTopicPeers(context) {
   try {
     const peers = libp2p.services.pubsub.getSubscribers(selectedTopic);
 
-    // Use optional chaining in case log is undefined
     log?.(`Found ${peers.length} subscribers to topic '${selectedTopic}'`);
 
     const peerList = [];
@@ -394,7 +400,6 @@ export function updateTopicPeers(context) {
 
       const nickname = getNickname(peerIdStr);
 
-      // Use optional chaining in case log is undefined
       log?.(
         `Adding peer to list: ${nickname} (${peerIdStr.substring(0, 10)}...)`
       );
@@ -419,11 +424,18 @@ export function updateTopicPeers(context) {
 
         switch (connectionStatus) {
           case CONNECTION_STATES.CONNECTED:
-            connectButton.textContent = "Chat";
+            connectButton.textContent = "Edit Together";
             connectButton.style.backgroundColor = "#4CAF50";
             connectButton.style.color = "white";
-            connectButton.onclick = () =>
-              activatePrivateChat(peerIdStr, context);
+            connectButton.onclick = () => {
+              // THIS IS THE KEY FIX - call startCollaborativeSession
+              if (startCollaborativeSession) {
+                log?.(`Starting collaborative session with ${nickname}`);
+                startCollaborativeSession(peerIdStr);
+              } else {
+                console.error("startCollaborativeSession not found in context");
+              }
+            };
             break;
           case CONNECTION_STATES.REQUESTED:
             connectButton.textContent = "Pending";
@@ -468,7 +480,6 @@ export function updateTopicPeers(context) {
       topicPeerList.replaceChildren(...peerList);
     }
   } catch (error) {
-    // Use optional chaining in case log is undefined
     log?.(`Error updating topic peers: ${error.message}`);
     console.error("Error updating topic peers:", error);
   }
@@ -516,7 +527,7 @@ export async function acceptConnectionRequest(peerId, context) {
     log,
     getNickname,
     generatePrivateTopic,
-    activatePrivateChat,
+    // Remove activatePrivateChat from here
   } = context;
 
   try {
@@ -539,7 +550,13 @@ export async function acceptConnectionRequest(peerId, context) {
     await sendConnectionAcceptance(peerId, context, privateTopic);
     log(`Accepted connection request from ${getNickname(peerId)}`);
 
-    activatePrivateChat(peerId);
+    // Remove this line:
+    // activatePrivateChat(peerId);
+
+    // Just update the UI to show the "Edit Together" button
+    if (context.updateTopicPeers) {
+      context.updateTopicPeers();
+    }
   } catch (error) {
     log(`Failed to accept connection: ${error.message}`);
   }
@@ -645,5 +662,94 @@ export function initializePeerIdDisplay(peerId) {
   const peerIdEl = DOM.peerId();
   if (peerIdEl) {
     peerIdEl.innerText = peerId;
+  }
+}
+
+/**
+ * Create and display the collaborative editor UI
+ * @param {Object} context - App context with event handlers
+ */
+export function createEditorUI(context) {
+  const { endCollaborativeSession } = context;
+  const editorSection = DOM.editorSection();
+
+  if (!editorSection) {
+    // Create editor section if it doesn't exist
+    const section = document.createElement("div");
+    section.id = "editor-section";
+    section.style.display = "none";
+    section.style.height = "600px";
+    section.style.display = "flex";
+    section.style.flexDirection = "column";
+
+    // Editor header
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.marginBottom = "10px";
+
+    const headerTitle = document.createElement("h2");
+    headerTitle.id = "editor-header";
+    headerTitle.textContent = "Collaborative Editor";
+    header.appendChild(headerTitle);
+
+    // Peer list
+    const peerList = document.createElement("div");
+    peerList.id = "editor-peer-list";
+    peerList.style.fontSize = "12px";
+    peerList.style.color = "#666";
+    header.appendChild(peerList);
+
+    section.appendChild(header);
+
+    // Editor container
+    const editorContainer = document.createElement("div");
+    editorContainer.id = "editor-container";
+    editorContainer.style.flex = "1";
+    editorContainer.style.border = "1px solid #ccc";
+    editorContainer.style.borderRadius = "4px";
+    editorContainer.style.overflow = "hidden";
+    section.appendChild(editorContainer);
+
+    // End session button
+    const endButton = document.createElement("button");
+    endButton.id = "end-editor-button";
+    endButton.textContent = "End Collaborative Session";
+    endButton.style.marginTop = "10px";
+    endButton.style.backgroundColor = "#f44336";
+    endButton.style.color = "white";
+    endButton.style.border = "none";
+    endButton.style.padding = "8px 16px";
+    endButton.style.borderRadius = "4px";
+    endButton.style.cursor = "pointer";
+    endButton.addEventListener("click", endCollaborativeSession);
+    section.appendChild(endButton);
+
+    // Add to main interface
+    const mainInterface = DOM.mainInterface();
+    if (mainInterface) {
+      mainInterface.appendChild(section);
+    }
+
+    return section;
+  }
+
+  return editorSection;
+}
+
+/**
+ * Update the collaborative editor peer list
+ * @param {Array} peers - Array of connected peers
+ */
+export function updateEditorPeerList(peers) {
+  const peerListEl = DOM.editorPeerList();
+  if (!peerListEl) return;
+
+  if (peers.length === 0) {
+    peerListEl.textContent = "No other collaborators";
+  } else {
+    const peerNames = peers.map((p) => p.user.name).join(", ");
+    peerListEl.textContent = `Collaborating with: ${peerNames}`;
   }
 }

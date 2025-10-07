@@ -21,10 +21,14 @@
         margin: 5px 0;
       }
       
-      div {
+      /* Scope vertical spacing; avoid affecting CodeMirror internals */
+      .section {
         margin-bottom: 20px;
       }
-      
+
+      /* Reset margins inside CodeMirror to keep gutters aligned */
+      .cm-editor div { margin-bottom: 0 !important; }
+
       input[type="text"] {
         width: 100%;
         max-width: 800px;
@@ -55,36 +59,38 @@
         margin-right: 10px;
       }
       
-      /* Chat Styling */
-      #chat-messages {
-        display: flex;
+      /* Editor Styling */
+      #editor-section {
+        display: none;
         flex-direction: column;
+        height: 600px;
       }
       
-      .sent-message {
-        background-color: #e1ffc7;
-        padding: 10px 15px;
-        margin: 5px 0;
-        border-radius: 10px;
-        align-self: flex-end;
-        max-width: 70%;
+      #editor-container {
+        flex: 1;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        overflow: hidden;
       }
       
-      .received-message {
-        background-color: #f0f0f0;
-        padding: 10px 15px;
-        margin: 5px 0;
-        border-radius: 10px;
-        align-self: flex-start;
-        max-width: 70%;
+      .editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      
+      #editor-peer-list {
+        font-size: 12px;
+        color: #666;
       }
     </style>
   </head>
   <body>
-    <h1>LibP2P Peer - Browser PubSub</h1>
-    <p>This peer connects to a relay and enables secure direct messaging with other peers</p>
+    <h1 class="section">LibP2P Peer - Collaborative Code Editor</h1>
+    <p class="section">Connect to peers and edit code together in real-time</p>
     
-    <div id="topic-selection">
+    <div id="topic-selection" class="section">
       <h2>Step 1: Choose your topic</h2>
       <label for="topic-input">Enter the topic you want to join:</label>
       <input type="text" id="topic-input" placeholder="my-topic" />
@@ -92,7 +98,7 @@
       <p><em>You will automatically discover peers interested in the same topic</em></p>
     </div>
 
-    <div id="main-interface" style="display: none;">
+    <div id="main-interface" class="section" style="display: none;">
       <div>
         <h2>Node Status</h2>
         <div style="display: flex; gap: 20px;">
@@ -112,24 +118,25 @@
       </div>
       <hr />
       
-      <!-- Peer Discovery Section - Hidden when in private chat -->
+      <!-- Peer Discovery Section - Hidden when in editor -->
       <div id="peer-discovery-section">
         <h2>Topic Peers</h2>
-        <p>Click "Connect" next to a peer to start a private WebRTC chat:</p>
+        <p>Click "Connect" next to a peer, then click "Edit Together" to start collaborative editing:</p>
         <ul id="topic-peers" style="list-style-type: none; padding-left: 0;">
           <li>None</li>
         </ul>
       </div>
       
-      <!-- Chat Section - Only shown when in private chat -->
-      <div id="chat-section" style="display: none;">
-        <h2 id="chat-header">Private Chat</h2>
-        <div id="chat-messages"></div>
-        <div style="display: flex; margin-top: 10px;">
-          <input type="text" id="chat-input" placeholder="Type your message..." style="flex: 1; margin-right: 10px;" />
-          <button id="chat-send-button">Send</button>
+      <!-- Editor Section - Only shown when collaborating -->
+      <div id="editor-section" style="display: none;">
+        <div class="editor-header">
+          <h2 id="editor-header">Collaborative Editor</h2>
+          <div id="editor-peer-list">Waiting for collaborators...</div>
         </div>
-        <button id="end-chat-button" style="margin-top: 10px; background-color: #f44336; color: white; border: none;">End Chat</button>
+        <div id="editor-container"></div>
+        <button id="end-editor-button" style="margin-top: 10px; background-color: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+          End Collaborative Session
+        </button>
       </div>
     </div>
     <script type="module" src="./peer.js"></script>
