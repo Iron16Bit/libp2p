@@ -8,6 +8,7 @@ export const MESSAGE_TYPES = {
   CONNECTION_ACCEPTED: "connection-accepted",
   CONNECTION_REJECTED: "connection-rejected",
   PRIVATE_MESSAGE: "private-message",
+  PEER_PRESENCE: "peer-presence",
 };
 
 /**
@@ -28,9 +29,10 @@ export async function handleMessage(event, context) {
     displayChatMessage,
     getNickname,
     updateTopicPeers,
-    activatePrivateChat,
     acceptConnectionRequest,
     rejectConnectionRequest,
+    relayAddr,
+    startCollaborativeSession,
   } = context;
 
   const topic = event.detail.topic;
@@ -67,7 +69,7 @@ export async function handleMessage(event, context) {
           const dialogText = document.getElementById("connection-request-text");
 
           if (dialog && dialogText) {
-            dialogText.textContent = `${requestingNickname} wants to start a private chat with you. Accept?`;
+            dialogText.textContent = `${requestingNickname} wants to connect with you for collaborative editing. Accept?`;
             dialog.style.display = "block";
 
             // Set up button handlers
@@ -170,6 +172,68 @@ export async function handleMessage(event, context) {
   try {
     const parsedMessage = JSON.parse(messageData);
 
+    // Handle peer presence announcements
+    if (parsedMessage.type === "peer-presence") {
+      const remotePeerId = parsedMessage.peerId;
+      const remoteNickname =
+        parsedMessage.nickname || getNickname(remotePeerId);
+
+      // Skip if this is our own message
+      if (remotePeerId === libp2p.peerId.toString()) return;
+
+      log(`Received presence announcement from ${remoteNickname}`);
+
+      // Store the nickname
+      if (remoteNickname) {
+        peerNicknames.set(remotePeerId, remoteNickname);
+      }
+
+      // Try to connect to this peer if we're not already connected
+      const connections = libp2p.getConnections(remotePeerId);
+      if (connections.length === 0) {
+        try {
+          // Try direct connection using their provided addresses
+          let connected = false;
+          if (parsedMessage.addresses && parsedMessage.addresses.length > 0) {
+            for (const addr of parsedMessage.addresses) {
+              try {
+                log(`Trying to dial peer at ${addr}`);
+                await libp2p.dial(multiaddr(addr));
+                log(`✓ Connected to peer ${remoteNickname} via direct address`);
+                connected = true;
+                break;
+              } catch (err) {
+                // Try next address
+              }
+            }
+          }
+
+          // If direct connection failed, try via relay
+          if (!connected && relayAddr) {
+            log(`Trying relay connection to ${remoteNickname}`);
+            await libp2p.dial(
+              multiaddr(`${relayAddr}/p2p-circuit/p2p/${remotePeerId}`)
+            );
+            log(`✓ Connected to peer ${remoteNickname} via relay`);
+            connected = true;
+          }
+
+          if (connected) {
+            // Send our nickname to the newly connected peer
+            if (context.sendNicknameAnnouncement) {
+              await context.sendNicknameAnnouncement();
+            }
+          }
+        } catch (error) {
+          log(`Failed to connect to peer ${remoteNickname}: ${error.message}`);
+        }
+      }
+
+      // Update UI
+      updateTopicPeers();
+      return;
+    }
+
     // Handle nickname announcements
     if (parsedMessage.type === MESSAGE_TYPES.NICKNAME) {
       const remotePeerId = parsedMessage.peerId;
@@ -216,8 +280,16 @@ export async function handleMessage(event, context) {
       // Subscribe to the private topic
       libp2p.services.pubsub.subscribe(privateTopic);
 
-      // Activate private chat
-      activatePrivateChat(acceptingPeerId);
+      // Auto-start collaborative session
+      if (typeof startCollaborativeSession === "function") {
+        try {
+          await startCollaborativeSession(acceptingPeerId);
+        } catch (e) {
+          log(`Failed to start editor automatically: ${e.message}`);
+        }
+      } else {
+        updateTopicPeers();
+      }
 
       return;
     }
@@ -456,7 +528,7 @@ export async function sendPrivateMessage(content, context) {
 
   if (!activePrivateTopic || !activePrivatePeer) {
     log("No active private chat");
-    return;
+    return false;
   }
 
   try {
