@@ -65,6 +65,34 @@ const log = (message) => {
   console.log(message);
 };
 
+// Small helpers for safe pubsub publish
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+async function publishWithRetry(topic, data, opts = {}) {
+  const { retries = 5, delay = 300 } = opts;
+  let attempt = 0;
+  while (true) {
+    try {
+      await libp2p.services.pubsub.publish(topic, data);
+      return true;
+    } catch (e) {
+      const noPeers =
+        typeof e?.message === "string" &&
+        e.message.includes("NoPeersSubscribedToTopic");
+      if (!noPeers || attempt >= retries) {
+        log(`publish(${topic}) failed: ${e?.message || e}`);
+        return false;
+      }
+      // Wait for peers to subscribe or backoff a bit
+      const peers = libp2p.services.pubsub.getSubscribers(topic);
+      if (peers.length > 1) {
+        // Likely fine on next attempt
+      }
+      await wait(delay * Math.pow(1.7, attempt));
+      attempt++;
+    }
+  }
+}
+
 // Get nickname for a peer ID, fallback to shortened peer ID
 const getNickname = (peerId) => {
   if (peerNicknames.has(peerId)) {
@@ -264,6 +292,7 @@ function setupLibp2pEventListeners() {
       rejectConnectionRequest,
       sendNicknameAnnouncement,
       relayAddr,
+      startCollaborativeSession,
     };
 
     handleMessage(event, context);
@@ -474,6 +503,13 @@ async function acceptConnectionRequest(peerId) {
   };
 
   await acceptConnectionRequestUI(peerId, context);
+
+  // Auto-start the collaborative editor after acceptance
+  try {
+    await startCollaborativeSession(peerId);
+  } catch (e) {
+    console.error("Failed to auto-start collaborative session:", e);
+  }
 }
 
 // Reject a connection request
@@ -777,9 +813,10 @@ async function sendNicknameAnnouncement() {
       nickname: myNickname,
     };
 
-    await libp2p.services.pubsub.publish(
+    await publishWithRetry(
       selectedTopic,
-      fromString(JSON.stringify(nicknameMessage))
+      fromString(JSON.stringify(nicknameMessage)),
+      { retries: 5, delay: 400 }
     );
 
     log(`Announced nickname "${myNickname}" to topic "${selectedTopic}"`);
@@ -893,27 +930,19 @@ async function requestPeerListFromRelay() {
   if (!libp2p || !selectedTopic) return;
 
   try {
-    log("Requesting peer list from relay...");
-    // Request peer list by publishing to a special topic
+    log("Requesting peer list from relay (on main topic)...");
     const discoveryRequest = {
       type: "peer-list-request",
       requestingPeer: libp2p.peerId.toString(),
       topic: selectedTopic,
       timestamp: Date.now(),
     };
-
-    // Use the relay's discovery topic
-    const relayDiscoveryTopic = "__discovery__relay";
-
-    await libp2p.services.pubsub.subscribe(relayDiscoveryTopic);
-
-    await libp2p.services.pubsub.publish(
-      relayDiscoveryTopic,
-      fromString(JSON.stringify(discoveryRequest))
+    await publishWithRetry(
+      selectedTopic,
+      fromString(JSON.stringify(discoveryRequest)),
+      { retries: 5, delay: 400 }
     );
-
-    log("Peer list request sent to relay");
-
+    log("Peer list request sent to relay (main topic)");
     // After a delay, check if we have connected to any peers
     setTimeout(() => {
       const peers = libp2p.services.pubsub.getSubscribers(selectedTopic);
@@ -959,14 +988,14 @@ async function broadcastPresence() {
       topic: selectedTopic,
     };
 
-    // Broadcast to the main topic
-    await libp2p.services.pubsub.publish(
+    // Broadcast to the main topic (retry if mesh not ready yet)
+    await publishWithRetry(
       selectedTopic,
-      fromString(JSON.stringify(presenceMessage))
+      fromString(JSON.stringify(presenceMessage)),
+      { retries: 5, delay: 400 }
     );
 
     log("Presence broadcast sent");
-
     // Explicitly try to get subscribers again to force refresh
     setTimeout(() => {
       const peers = libp2p.services.pubsub.getSubscribers(selectedTopic);

@@ -32,6 +32,7 @@ export async function handleMessage(event, context) {
     acceptConnectionRequest,
     rejectConnectionRequest,
     relayAddr,
+    startCollaborativeSession,
   } = context;
 
   const topic = event.detail.topic;
@@ -174,18 +175,19 @@ export async function handleMessage(event, context) {
     // Handle peer presence announcements
     if (parsedMessage.type === "peer-presence") {
       const remotePeerId = parsedMessage.peerId;
-      const remoteNickname = parsedMessage.nickname || getNickname(remotePeerId);
-      
+      const remoteNickname =
+        parsedMessage.nickname || getNickname(remotePeerId);
+
       // Skip if this is our own message
       if (remotePeerId === libp2p.peerId.toString()) return;
-      
+
       log(`Received presence announcement from ${remoteNickname}`);
-      
+
       // Store the nickname
       if (remoteNickname) {
         peerNicknames.set(remotePeerId, remoteNickname);
       }
-      
+
       // Try to connect to this peer if we're not already connected
       const connections = libp2p.getConnections(remotePeerId);
       if (connections.length === 0) {
@@ -205,11 +207,13 @@ export async function handleMessage(event, context) {
               }
             }
           }
-          
+
           // If direct connection failed, try via relay
           if (!connected && relayAddr) {
             log(`Trying relay connection to ${remoteNickname}`);
-            await libp2p.dial(multiaddr(`${relayAddr}/p2p-circuit/p2p/${remotePeerId}`));
+            await libp2p.dial(
+              multiaddr(`${relayAddr}/p2p-circuit/p2p/${remotePeerId}`)
+            );
             log(`✓ Connected to peer ${remoteNickname} via relay`);
             connected = true;
           }
@@ -224,7 +228,7 @@ export async function handleMessage(event, context) {
           log(`Failed to connect to peer ${remoteNickname}: ${error.message}`);
         }
       }
-      
+
       // Update UI
       updateTopicPeers();
       return;
@@ -276,15 +280,16 @@ export async function handleMessage(event, context) {
       // Subscribe to the private topic
       libp2p.services.pubsub.subscribe(privateTopic);
 
-      // Instead of activating private chat, just update the UI
-      updateTopicPeers();
-
-      // Show notification that connection was accepted
-      alert(
-        `${getNickname(
-          acceptingPeerId
-        )} accepted your connection. Click "Edit Together" to start collaborating.`
-      );
+      // Auto-start collaborative session
+      if (typeof startCollaborativeSession === "function") {
+        try {
+          await startCollaborativeSession(acceptingPeerId);
+        } catch (e) {
+          log(`Failed to start editor automatically: ${e.message}`);
+        }
+      } else {
+        updateTopicPeers();
+      }
 
       return;
     }

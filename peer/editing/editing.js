@@ -25,7 +25,7 @@ class Libp2pProvider {
     this.awareness = new Awareness(ydoc);
     this.connected = false;
     this.synced = false;
-    this.messageQueue = [];
+    this.messageQueue = []; // Uint8Array payloads waiting for peers
     this.clientId = Math.floor(Math.random() * 100000000);
 
     console.log(`LibP2P provider created with client ID: ${this.clientId}`);
@@ -73,6 +73,50 @@ class Libp2pProvider {
     setTimeout(() => this.requestSync(), 500);
   }
 
+  get hasPeers() {
+    try {
+      return this.libp2p.services.pubsub.getSubscribers(this.topic).length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  async publishSafe(encoded) {
+    try {
+      await this.libp2p.services.pubsub.publish(this.topic, encoded);
+      return true;
+    } catch (e) {
+      const noPeers =
+        typeof e?.message === "string" &&
+        e.message.includes("NoPeersSubscribedToTopic");
+      if (noPeers) {
+        // Queue and flush later
+        this.messageQueue.push(encoded);
+        return false;
+      }
+      throw e;
+    }
+  }
+
+  async flushQueue() {
+    if (!this.hasPeers || this.messageQueue.length === 0) return;
+    const pending = this.messageQueue.splice(0, this.messageQueue.length);
+    for (const payload of pending) {
+      try {
+        await this.libp2p.services.pubsub.publish(this.topic, payload);
+      } catch (e) {
+        // Put back if still no peers, otherwise drop on unexpected error
+        const noPeers =
+          typeof e?.message === "string" &&
+          e.message.includes("NoPeersSubscribedToTopic");
+        if (noPeers) {
+          this.messageQueue.push(payload);
+          break;
+        }
+      }
+    }
+  }
+
   async announcePresence() {
     try {
       const message = {
@@ -81,10 +125,7 @@ class Libp2pProvider {
         timestamp: Date.now(),
       };
 
-      await this.libp2p.services.pubsub.publish(
-        this.topic,
-        fromString(JSON.stringify(message))
-      );
+      await this.publishSafe(fromString(JSON.stringify(message)));
 
       console.log(
         `Announced presence with client ID ${this.clientId} to topic ${this.topic}`
@@ -107,6 +148,8 @@ class Libp2pProvider {
         `Peer ${peerId} subscribed to our editor topic - sending sync request`
       );
       this.requestSync();
+      // Now that at least one peer is here, flush queued messages
+      this.flushQueue();
     }
   }
 
@@ -118,10 +161,7 @@ class Libp2pProvider {
         timestamp: Date.now(),
       };
 
-      await this.libp2p.services.pubsub.publish(
-        this.topic,
-        fromString(JSON.stringify(message))
-      );
+      await this.publishSafe(fromString(JSON.stringify(message)));
 
       console.log("Requested document sync from peers");
     } catch (error) {
@@ -150,10 +190,7 @@ class Libp2pProvider {
         timestamp: Date.now(),
       };
 
-      await this.libp2p.services.pubsub.publish(
-        this.topic,
-        fromString(JSON.stringify(message))
-      );
+      await this.publishSafe(fromString(JSON.stringify(message)));
 
       console.log(`Broadcasted document update (${update.length} bytes)`);
     } catch (error) {
@@ -176,10 +213,7 @@ class Libp2pProvider {
         timestamp: Date.now(),
       };
 
-      await this.libp2p.services.pubsub.publish(
-        this.topic,
-        fromString(JSON.stringify(message))
-      );
+      await this.publishSafe(fromString(JSON.stringify(message)));
 
       console.log(
         `Broadcasted awareness update (${awarenessUpdate.length} bytes)`
@@ -202,10 +236,7 @@ class Libp2pProvider {
         timestamp: Date.now(),
       };
 
-      await this.libp2p.services.pubsub.publish(
-        this.topic,
-        fromString(JSON.stringify(message))
-      );
+      await this.publishSafe(fromString(JSON.stringify(message)));
 
       console.log(
         `Sent full document state to client ${targetClientId} (${state.length} bytes)`
