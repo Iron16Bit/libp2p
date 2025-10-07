@@ -1,3 +1,9 @@
+import {
+  sendConnectionRequest,
+  sendConnectionAcceptance,
+  sendConnectionRejection,
+} from "./messages.js";
+
 /**
  * UI utilities for managing DOM elements and UI interactions
  */
@@ -465,6 +471,117 @@ export function updateTopicPeers(context) {
     // Use optional chaining in case log is undefined
     log?.(`Error updating topic peers: ${error.message}`);
     console.error("Error updating topic peers:", error);
+  }
+}
+
+/**
+ * Request a private connection with a peer
+ * @param {string} peerId - Peer ID to connect to
+ * @param {Object} context - App context
+ */
+export async function requestPrivateConnection(peerId, context) {
+  const { directConnections, CONNECTION_STATES, activatePrivateChat } = context;
+
+  // Check if there's already a connection request
+  if (directConnections.has(peerId)) {
+    const conn = directConnections.get(peerId);
+    if (conn.status === CONNECTION_STATES.CONNECTED) {
+      activatePrivateChat(peerId);
+      return;
+    } else if (conn.status === CONNECTION_STATES.REQUESTED) {
+      alert(
+        "You've already sent a connection request to this peer. Please wait for their response."
+      );
+      return;
+    } else if (conn.status === CONNECTION_STATES.REJECTED) {
+      alert("This peer has rejected your connection request.");
+      return;
+    }
+  }
+
+  // Import from messages.js
+  await sendConnectionRequest(peerId, context);
+}
+
+/**
+ * Accept a connection request
+ * @param {string} peerId - Peer ID to accept
+ * @param {Object} context - App context
+ */
+export async function acceptConnectionRequest(peerId, context) {
+  const {
+    libp2p,
+    directConnections,
+    CONNECTION_STATES,
+    log,
+    getNickname,
+    generatePrivateTopic,
+    activatePrivateChat,
+  } = context;
+
+  try {
+    if (!directConnections.has(peerId)) {
+      log(`No connection request from ${peerId}`);
+      return;
+    }
+
+    const privateTopic = generatePrivateTopic(libp2p.peerId.toString(), peerId);
+
+    directConnections.set(peerId, {
+      status: CONNECTION_STATES.CONNECTED,
+      privateTopic: privateTopic,
+      messages: [],
+    });
+
+    libp2p.services.pubsub.subscribe(privateTopic);
+    log(`Subscribed to private topic: ${privateTopic}`);
+
+    await sendConnectionAcceptance(peerId, context, privateTopic);
+    log(`Accepted connection request from ${getNickname(peerId)}`);
+
+    activatePrivateChat(peerId);
+  } catch (error) {
+    log(`Failed to accept connection: ${error.message}`);
+  }
+}
+
+/**
+ * Reject a connection request
+ * @param {string} peerId - Peer ID to reject
+ * @param {Object} context - App context
+ */
+export async function rejectConnectionRequest(peerId, context) {
+  const {
+    directConnections,
+    CONNECTION_STATES,
+    log,
+    getNickname,
+    updateTopicPeers,
+  } = context;
+
+  try {
+    if (!directConnections.has(peerId)) {
+      log(`No connection request from ${peerId}`);
+      return;
+    }
+
+    directConnections.set(peerId, {
+      status: CONNECTION_STATES.REJECTED,
+      privateTopic: null,
+      messages: [],
+    });
+
+    await sendConnectionRejection(peerId, context);
+    log(`Rejected connection request from ${getNickname(peerId)}`);
+
+    updateTopicPeers();
+
+    const connectionDialog = DOM.connectionDialog();
+    if (connectionDialog) {
+      connectionDialog.style.display = "none";
+    }
+  } catch (error) {
+    log(`Failed to reject connection: ${error.message}`);
   }
 }
 
