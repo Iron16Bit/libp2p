@@ -17,6 +17,11 @@ config();
 const PUBLIC_IP = process.env.PUBLIC_IP || "localhost";
 const LIBP2P_PORT = process.env.LIBP2P_PORT || 4003;
 
+// New: tuning knobs with sane defaults for small VMs
+const HEARTBEAT_INTERVAL = Number(process.env.GOSSIP_HEARTBEAT_MS ?? 5000);
+const RELAY_MAX_RESERVATIONS = Number(process.env.RELAY_MAX_RESERVATIONS ?? 64);
+const RELAY_MAX_CONNECTIONS = Number(process.env.RELAY_MAX_CONNECTIONS ?? 100);
+
 // Create peer ID
 const peerId = await createEd25519PeerId();
 console.log(`Relay peer ID: ${peerId.toString()}`);
@@ -37,21 +42,33 @@ const server = await createLibp2p({
   ],
   connectionEncrypters: [noise()],
   streamMuxers: [yamux()],
+
+  // New: keep connection count bounded and don't dial from the relay
+  connectionManager: {
+    minConnections: 0,
+    maxConnections: RELAY_MAX_CONNECTIONS,
+    autoDial: false,
+  },
+
   services: {
     identify: identify(),
     relay: circuitRelayServer({
       reservations: {
-        maxReservations: Infinity,
+        // Cap how many peers can reserve the relay
+        maxReservations: RELAY_MAX_RESERVATIONS,
       },
+      // Optional: if you want to completely avoid relaying data through the relay,
+      // enable hop.disable below. This keeps signaling but prevents data proxying.
+      // hop: { enabled: false },
     }),
     pubsub: gossipsub({
-      // Enable peer exchange
-      enablePeerExchange: true,
-      // Allow publishing to topics we're not subscribed to
+      // Reduce background churn
+      enablePeerExchange: false,
       allowPublishToZeroPeers: true,
-      // Enable flood publishing for better message delivery
-      floodPublish: true,
-      // Act as a relay node for messages
+      floodPublish: false,
+      heartbeatInterval: HEARTBEAT_INTERVAL,
+
+      // Smaller mesh for a server role
       scoreParams: {
         topics: {},
         topicScoreCap: 10,
@@ -59,12 +76,11 @@ const server = await createLibp2p({
         decayInterval: 12000,
         decayToZero: 0.01,
       },
-      // More permissive mesh parameters for relaying
-      dLow: 2,
-      dHigh: 8,
-      dScore: 2,
+      dLow: 1,
+      dHigh: 5,
+      dScore: 1,
       dOut: 1,
-      dLazy: 4,
+      dLazy: 3,
     }),
   },
 });
@@ -113,18 +129,8 @@ server.services.pubsub.addEventListener(
 
         // Peer subscribed to a topic
         if (!topicPeers.has(topic)) {
+          // New: don't subscribe the relay to client topics (keeps it out of the mesh)
           topicPeers.set(topic, new Set());
-          // Relay subscribes to the topic to help with message routing
-          try {
-            server.services.pubsub.subscribe(topic);
-            console.log(
-              `Relay subscribed to topic '${topic}' for message routing`
-            );
-          } catch (error) {
-            console.log(
-              `Failed to subscribe relay to topic '${topic}': ${error.message}`
-            );
-          }
         }
         topicPeers.get(topic).add(subscribingPeer.toString());
 
@@ -164,7 +170,6 @@ server.services.pubsub.addEventListener(
           };
 
           try {
-            // Create a special discovery topic for this peer
             const discoveryTopic = `__discovery__${subscribingPeer.toString()}`;
             await server.services.pubsub.publish(
               discoveryTopic,
