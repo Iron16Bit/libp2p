@@ -15,7 +15,6 @@ import {
   MESSAGE_TYPES,
   handleMessage,
   sendPrivateMessage,
-  sendNicknameAnnouncement as sendNicknameAnnouncementUtil,
 } from "./utils/messages.js";
 import {
   DOM,
@@ -40,7 +39,7 @@ import {
 } from "./editing/editing.js";
 
 // Put here the relay peer's addresses:
-const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWKuGXD4vCRS7t8W5DmL99JosVHVH8uxX6QuXCUYZmK1Gv`;
+const relayAddr = `/ip4/130.110.13.183/tcp/4003/ws/p2p/12D3KooWFuGVKx5k84pbiYpCCeZRQiLUTmTZYWeposbMBd9TecWv`;
 
 // Store for peer nicknames
 const peerNicknames = new Map(); // peerId -> nickname
@@ -435,9 +434,10 @@ function setupLibp2pEventListeners() {
   });
 
   // Add more detailed connection close logging
-  libp2p.addEventListener("connection:close", (event) => {
+  libp2p.addEventListener("connection:close", async (event) => {
     const connection = event.detail;
-    const peerNickname = getNickname(connection.remotePeer.toString());
+    const remoteId = connection.remotePeer.toString();
+    const peerNickname = getNickname(remoteId);
 
     // Log the reason for connection closure if available
     const closeReason = connection.closeReason || "Unknown reason";
@@ -450,6 +450,37 @@ function setupLibp2pEventListeners() {
         direction: connection.direction,
         timeline: connection.timeline,
       });
+    }
+
+    // If we had a private connection state with this peer, clear it and re-join discovery
+    try {
+      if (
+        directConnections.has(remoteId) &&
+        directConnections.get(remoteId).status === CONNECTION_STATES.CONNECTED
+      ) {
+        // Reset the connection entry so this peer becomes visible again
+        directConnections.set(remoteId, {
+          status: CONNECTION_STATES.NONE,
+          privateTopic: null,
+          messages: [],
+        });
+
+        // Re-subscribe to main topic so we reappear in discovery
+        if (libp2p && selectedTopic) {
+          try {
+            await libp2p.services.pubsub.subscribe(selectedTopic);
+            log(
+              `Re-subscribed to discovery topic '${selectedTopic}' after disconnect with ${peerNickname}`
+            );
+          } catch (e) {
+            log(`Failed to re-subscribe to '${selectedTopic}': ${e.message}`);
+          }
+        }
+
+        updateTopicPeers();
+      }
+    } catch (e) {
+      console.error("Error handling connection close state:", e);
     }
   });
 }
@@ -809,7 +840,7 @@ async function initializeLibp2p() {
   }
 }
 
-// Add this sendNicknameAnnouncement function if it doesn't exist
+// Replace the existing sendNicknameAnnouncement function
 async function sendNicknameAnnouncement() {
   if (!libp2p || !selectedTopic) return;
 
@@ -894,25 +925,103 @@ async function startCollaborativeSession(peerId) {
 /**
  * End collaborative editing session
  */
-function endCollaborativeSession() {
-  if (collaborativeEditor) {
-    collaborativeEditor.destroy();
-    collaborativeEditor = null;
-  }
+async function endCollaborativeSession() {
+  try {
+    // Notify the other peer that we're ending the session
+    if (activePrivatePeer) {
+      const connection = directConnections.get(activePrivatePeer);
+      if (connection && connection.privateTopic) {
+        try {
+          const endSessionMessage = {
+            type: MESSAGE_TYPES.SESSION_ENDED,
+            peerId: libp2p.peerId.toString(),
+            privateTopic: connection.privateTopic,
+            timestamp: Date.now(),
+          };
 
-  // Hide editor, show peer discovery
-  const editorSection = DOM.editorSection();
-  if (editorSection) {
-    editorSection.style.display = "none";
-  }
+          // Send the message to the private topic
+          await libp2p.services.pubsub.publish(
+            connection.privateTopic,
+            fromString(JSON.stringify(endSessionMessage))
+          );
+          log(
+            `Sent session end notification to ${getNickname(activePrivatePeer)}`
+          );
 
-  const peerDiscoverySection = DOM.peerDiscoverySection();
-  if (peerDiscoverySection) {
-    peerDiscoverySection.style.display = "block";
-  }
+          // Reset connection state to NONE
+          directConnections.set(activePrivatePeer, {
+            status: CONNECTION_STATES.NONE,
+            privateTopic: null,
+            messages: [],
+          });
+        } catch (e) {
+          log(`Error sending session end notification: ${e.message}`);
+        }
+      }
+    }
 
-  log("Ended collaborative session");
-  updateTopicPeers();
+    // Try to destroy editor gracefully
+    if (collaborativeEditor) {
+      try {
+        collaborativeEditor.destroy();
+      } catch (err) {
+        console.error("Error destroying collaborative editor:", err);
+      }
+      collaborativeEditor = null;
+    }
+
+    // Hide editor UI
+    const editorSection = DOM.editorSection();
+    if (editorSection) {
+      editorSection.style.display = "none";
+    }
+
+    // Show peer discovery UI
+    const peerDiscoverySection = DOM.peerDiscoverySection();
+    if (peerDiscoverySection) {
+      peerDiscoverySection.style.display = "block";
+    }
+
+    // Restore the displayed current topic to the previously selected topic
+    const currentTopicEl = DOM.currentTopic();
+    if (currentTopicEl) {
+      currentTopicEl.textContent = selectedTopic || "";
+    }
+
+    // Ensure we're subscribed to the main discovery topic again.
+    if (libp2p && selectedTopic) {
+      try {
+        const topics = libp2p.services.pubsub.getTopics
+          ? libp2p.services.pubsub.getTopics()
+          : [];
+        if (!topics.includes(selectedTopic)) {
+          await libp2p.services.pubsub.subscribe(selectedTopic);
+          log(`Re-subscribed to topic: ${selectedTopic}`);
+        }
+      } catch (e) {
+        log(`Failed to (re)subscribe to '${selectedTopic}': ${e.message}`);
+      }
+
+      // Re-announce presence and request peers to refresh discovery
+      try {
+        await sendNicknameAnnouncement();
+        await broadcastPresence();
+        // Small delay then refresh peer list
+        setTimeout(() => updateTopicPeers(), 500);
+      } catch (e) {
+        log(`Error re-announcing presence: ${e.message}`);
+      }
+    }
+
+    // Reset active peers
+    activePrivateTopic = null;
+    activePrivatePeer = null;
+
+    log("Ended collaborative session and returned to discovery");
+    updateTopicPeers();
+  } catch (error) {
+    console.error("Error in endCollaborativeSession:", error);
+  }
 }
 
 /**

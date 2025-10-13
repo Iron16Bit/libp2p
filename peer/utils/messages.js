@@ -9,6 +9,7 @@ export const MESSAGE_TYPES = {
   CONNECTION_REJECTED: "connection-rejected",
   PRIVATE_MESSAGE: "private-message",
   PEER_PRESENCE: "peer-presence",
+  SESSION_ENDED: "session-ended",
 };
 
 /**
@@ -33,6 +34,7 @@ export async function handleMessage(event, context) {
     rejectConnectionRequest,
     relayAddr,
     startCollaborativeSession,
+    endCollaborativeSession,
   } = context;
 
   const topic = event.detail.topic;
@@ -280,6 +282,20 @@ export async function handleMessage(event, context) {
       // Subscribe to the private topic
       libp2p.services.pubsub.subscribe(privateTopic);
 
+      // Hide ourselves from the shared discovery topic so this pair is no longer visible
+      try {
+        if (selectedTopic) {
+          await libp2p.services.pubsub.unsubscribe(selectedTopic);
+          log(
+            `Unsubscribed from discovery topic '${selectedTopic}' after connecting to ${getNickname(
+              acceptingPeerId
+            )}`
+          );
+        }
+      } catch (e) {
+        log(`Failed to unsubscribe from '${selectedTopic}': ${e.message}`);
+      }
+
       // Auto-start collaborative session
       if (typeof startCollaborativeSession === "function") {
         try {
@@ -323,6 +339,105 @@ export async function handleMessage(event, context) {
 
       // Update UI
       updateTopicPeers();
+      return;
+    }
+
+    // Handle session ended notification (peer closed the editor)
+    if (parsedMessage.type === MESSAGE_TYPES.SESSION_ENDED) {
+      try {
+        const remotePeerId = parsedMessage.peerId;
+        const endedPrivateTopic = parsedMessage.privateTopic;
+
+        log(`Session ended by ${getNickname(remotePeerId)}`);
+
+        // If we have a direct connection entry for that peer, reset it to NONE immediately
+        if (directConnections.has(remotePeerId)) {
+          directConnections.set(remotePeerId, {
+            status: CONNECTION_STATES.NONE,
+            privateTopic: null,
+            messages: [],
+          });
+        }
+
+        // Make sure we unsubscribe from the private/editor topic
+        try {
+          if (libp2p && endedPrivateTopic) {
+            await libp2p.services.pubsub.unsubscribe(endedPrivateTopic);
+            log(`Unsubscribed from private topic ${endedPrivateTopic}`);
+          }
+        } catch (e) {
+          log(`Failed to unsubscribe from ${endedPrivateTopic}: ${e.message}`);
+        }
+
+        // Signal the UI/peer layer to end any local editor instance
+        // Pass false to indicate we don't need to send another notification
+        // since we're reacting to a notification, not initiating the end
+        if (typeof endCollaborativeSession === "function") {
+          try {
+            // We need to call the function without sending another SESSION_ENDED message
+            // to avoid circular notifications
+
+            // Try to destroy editor gracefully
+            if (
+              typeof window.collaborativeEditor !== "undefined" &&
+              window.collaborativeEditor
+            ) {
+              try {
+                window.collaborativeEditor.destroy();
+                window.collaborativeEditor = null;
+              } catch (err) {
+                console.error("Error destroying collaborative editor:", err);
+              }
+            }
+
+            // Hide editor UI
+            const editorSection = document.getElementById("editor-section");
+            if (editorSection) {
+              editorSection.style.display = "none";
+            }
+
+            // Show peer discovery UI
+            const peerDiscoverySection = document.getElementById(
+              "peer-discovery-section"
+            );
+            if (peerDiscoverySection) {
+              peerDiscoverySection.style.display = "block";
+            }
+
+            // Reset active peers state
+            if (typeof activePrivateTopic !== "undefined")
+              activePrivateTopic = null;
+            if (typeof activePrivatePeer !== "undefined")
+              activePrivatePeer = null;
+
+            log("Ended collaborative session after remote peer disconnected");
+          } catch (e) {
+            log(`endCollaborativeSession handler error: ${e.message}`);
+          }
+        }
+
+        // Make sure to resubscribe to main topic if needed
+        try {
+          if (selectedTopic && libp2p) {
+            const topics = libp2p.services.pubsub.getTopics();
+            if (!topics.includes(selectedTopic)) {
+              await libp2p.services.pubsub.subscribe(selectedTopic);
+              log(`Re-subscribed to main topic: ${selectedTopic}`);
+            }
+          }
+        } catch (e) {
+          log(`Error re-subscribing to main topic: ${e.message}`);
+        }
+
+        // Force refresh the peer list to show "Connect" buttons again
+        if (typeof updateTopicPeers === "function") {
+          // Add slight delay to ensure state is updated first
+          setTimeout(() => updateTopicPeers(), 100);
+        }
+      } catch (e) {
+        log(`Error handling session-ended: ${e.message}`);
+      }
+
       return;
     }
 
@@ -546,30 +661,31 @@ export async function sendPrivateMessage(content, context) {
       connection.messages.push(messageObj);
     }
 
-    // Send message
+    // Send to peer
     await libp2p.services.pubsub.publish(
       activePrivateTopic,
       fromString(JSON.stringify(messageObj))
     );
 
-    // Display message in chat
+    // Display in our own chat
     displayChatMessage(libp2p.peerId.toString(), content, true);
 
-    log(`Sent private message: ${content}`);
     return true;
   } catch (error) {
-    log(`Failed to send message: ${error.message}`);
-    console.error("Send message error:", error);
+    log(`Failed to send private message: ${error.message}`);
     return false;
   }
 }
 
 /**
- * Send a nickname announcement to the topic
- * @param {Object} context - App context
+ * Send a nickname announcement to the current topic
+ * @param {Object} context - App context with libp2p and other required data
+ * @returns {Promise<boolean>} Whether the announcement was sent successfully
  */
 export async function sendNicknameAnnouncement(context) {
-  const { libp2p, myNickname, selectedTopic, log } = context;
+  const { libp2p, selectedTopic, myNickname, publishWithRetry } = context;
+
+  if (!libp2p || !selectedTopic) return false;
 
   try {
     const nicknameMessage = {
@@ -578,15 +694,27 @@ export async function sendNicknameAnnouncement(context) {
       nickname: myNickname,
     };
 
-    await libp2p.services.pubsub.publish(
-      selectedTopic,
-      fromString(JSON.stringify(nicknameMessage))
-    );
+    if (typeof publishWithRetry === "function") {
+      // Use publishWithRetry if available
+      await publishWithRetry(
+        selectedTopic,
+        fromString(JSON.stringify(nicknameMessage)),
+        { retries: 5, delay: 400 }
+      );
+    } else {
+      // Fallback to regular publish
+      await libp2p.services.pubsub.publish(
+        selectedTopic,
+        fromString(JSON.stringify(nicknameMessage))
+      );
+    }
 
-    log(`Announced nickname "${myNickname}" to topic "${selectedTopic}"`);
+    console.log(
+      `Announced nickname "${myNickname}" to topic "${selectedTopic}"`
+    );
     return true;
   } catch (error) {
-    log(`Failed to announce nickname: ${error.message}`);
+    console.log(`Failed to announce nickname: ${error.message}`);
     return false;
   }
 }

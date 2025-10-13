@@ -547,6 +547,16 @@ export async function acceptConnectionRequest(peerId, context) {
     libp2p.services.pubsub.subscribe(privateTopic);
     log(`Subscribed to private topic: ${privateTopic}`);
 
+    // Hide from the main discovery topic so this connection pair isn't visible to others
+    try {
+      if (libp2p && context.selectedTopic) {
+        await libp2p.services.pubsub.unsubscribe(context.selectedTopic);
+        log(`Unsubscribed from topic: ${context.selectedTopic}`);
+      }
+    } catch (e) {
+      log(`Failed to unsubscribe from ${context.selectedTopic}: ${e.message}`);
+    }
+
     await sendConnectionAcceptance(peerId, context, privateTopic);
     log(`Accepted connection request from ${getNickname(peerId)}`);
 
@@ -733,6 +743,13 @@ export function createEditorUI(context) {
     }
 
     return section;
+  }
+
+  // If the editor section already exists in the DOM (e.g. present in index.html),
+  // ensure the End button has the handler attached so clicking it calls back.
+  const existingEndBtn = DOM.endEditorButton();
+  if (existingEndBtn) {
+    existingEndBtn.onclick = endCollaborativeSession;
   }
 
   return editorSection;
