@@ -217,5 +217,5 @@ server.services.pubsub.addEventListener(
 // );
 // console.log("Relay server with GossipSub discovery hub is now active");
 console.log(
-  `Your relay is publicly accessible at: ${PUBLIC_IP}:${LIBP2P_PORT}`
+  `Your relay is publicly accessible at: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
 );
