@@ -10,6 +10,7 @@ import * as filters from "@libp2p/websockets/filters";
 import { createLibp2p } from "libp2p";
 import { createEd25519PeerId } from "@libp2p/peer-id-factory";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
+import { PeerIdManager } from './PeerIdManager.ts'
 
 // Load environment variables from .env file
 config();
@@ -25,8 +26,11 @@ console.log(`Relay peer ID: ${peerId.toString()}`);
 const connectedPeers = new Map();
 const topicPeers = new Map(); // topic -> Set of peer IDs
 
+// Use static peer ID for the relay server
+const privateKey = await PeerIdManager.getPrivateKey('./peer-id.key')
+
 const server = await createLibp2p({
-  peerId: peerId,
+  privateKey,
   addresses: {
     listen: [`/ip4/0.0.0.0/tcp/${LIBP2P_PORT}/ws`],
   },
@@ -221,7 +225,6 @@ server.services.pubsub.addEventListener(
   }
 );
 
-console.log(`Relay peer ID: ${server.peerId.toString()}`);
 console.log(
   "Relay listening on multiaddr(s): ",
   server.getMultiaddrs().map((ma) => ma.toString())
