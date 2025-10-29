@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "description": "LibP2P relay server with peer discovery API",
   "type": "module",
-  "main": "index.js",
+  "main": "Relay.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "start": "node Relay.js",
+    "dev": "node Relay.js"
   },
   "dependencies": {
     "@chainsafe/libp2p-gossipsub": "^14.0.0",

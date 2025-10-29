@@ -45,7 +45,8 @@ const server = await createLibp2p({
     identify: identify(),
     relay: circuitRelayServer({
       reservations: {
-        maxReservations: Infinity,
+        maxReservations: 20,
+        reservationTTL: 60000, // 1 minute
       },
     }),
     pubsub: gossipsub({
@@ -83,7 +84,6 @@ server.addEventListener("peer:connect", (event) => {
   };
   connectedPeers.set(peerId, peerInfo);
   console.log(`Peer connected: ${peerId}`);
-  console.log(`Total connected peers: ${connectedPeers.size}`);
 });
 
 server.addEventListener("peer:disconnect", (event) => {
@@ -99,7 +99,6 @@ server.addEventListener("peer:disconnect", (event) => {
   }
 
   console.log(`Peer disconnected: ${peerId}`);
-  console.log(`Total connected peers: ${connectedPeers.size}`);
 });
 
 // Track topic subscriptions and facilitate peer discovery
@@ -121,21 +120,13 @@ server.services.pubsub.addEventListener(
           // Relay subscribes to the topic to help with message routing
           try {
             server.services.pubsub.subscribe(topic);
-            console.log(
-              `Relay subscribed to topic '${topic}' for message routing`
-            );
           } catch (error) {
-            console.log(
-              `Failed to subscribe relay to topic '${topic}': ${error.message}`
-            );
+            // Nothing?
           }
         }
         topicPeers.get(topic).add(subscribingPeer.toString());
 
         console.log(`Peer ${subscribingPeer} subscribed to topic '${topic}'`);
-        console.log(
-          `Topic '${topic}' now has ${topicPeers.get(topic).size} peers`
-        );
 
         // Get existing peers in this topic (excluding the new subscriber)
         const existingPeers = Array.from(topicPeers.get(topic)).filter(
@@ -143,9 +134,6 @@ server.services.pubsub.addEventListener(
         );
 
         if (existingPeers.length > 0) {
-          console.log(
-            `Facilitating discovery for topic '${topic}' - sharing ${existingPeers.length} existing peers`
-          );
 
           // Send discovery message to the new subscriber about existing peers
           const discoveryMessage = {
@@ -174,11 +162,8 @@ server.services.pubsub.addEventListener(
               discoveryTopic,
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
-            console.log(
-              `Sent discovery info to ${subscribingPeer} about ${existingPeers.length} peers`
-            );
           } catch (error) {
-            console.log(`Failed to send discovery message: ${error.message}`);
+            // Nothing ?
           }
 
           // Also notify existing peers about the new peer
@@ -203,9 +188,7 @@ server.services.pubsub.addEventListener(
                 new TextEncoder().encode(JSON.stringify(newPeerMessage))
               );
             } catch (error) {
-              console.log(
-                `Failed to notify ${existingPeerId}: ${error.message}`
-              );
+              // Nothing ?
             }
           }
         }
@@ -225,14 +208,14 @@ server.services.pubsub.addEventListener(
   }
 );
 
-console.log(
-  "Relay listening on multiaddr(s): ",
-  server.getMultiaddrs().map((ma) => ma.toString())
-);
-console.log(
-  `Public relay multiaddr: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
-);
-console.log("Relay server with GossipSub discovery hub is now active");
+// console.log(
+//   "Relay listening on multiaddr(s): ",
+//   server.getMultiaddrs().map((ma) => ma.toString())
+// );
+// console.log(
+//   `Public relay multiaddr: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
+// );
+// console.log("Relay server with GossipSub discovery hub is now active");
 console.log(
   `Your relay is publicly accessible at: ${PUBLIC_IP}:${LIBP2P_PORT}`
 );
