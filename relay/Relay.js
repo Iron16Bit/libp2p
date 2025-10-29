@@ -10,7 +10,8 @@ import * as filters from "@libp2p/websockets/filters";
 import { createLibp2p } from "libp2p";
 import { createEd25519PeerId } from "@libp2p/peer-id-factory";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
-import { PeerIdManager } from './PeerIdManager.ts'
+import { PeerIdManager } from "./PeerIdManager.ts";
+import http from "http";
 
 // Load environment variables from .env file
 config();
@@ -27,7 +28,7 @@ const connectedPeers = new Map();
 const topicPeers = new Map(); // topic -> Set of peer IDs
 
 // Use static peer ID for the relay server
-const privateKey = await PeerIdManager.getPrivateKey('./peer-id.key')
+const privateKey = await PeerIdManager.getPrivateKey("./peer-id.key");
 
 const server = await createLibp2p({
   privateKey,
@@ -134,7 +135,6 @@ server.services.pubsub.addEventListener(
         );
 
         if (existingPeers.length > 0) {
-
           // Send discovery message to the new subscriber about existing peers
           const discoveryMessage = {
             type: "peer-discovery",
@@ -208,14 +208,38 @@ server.services.pubsub.addEventListener(
   }
 );
 
-// console.log(
-//   "Relay listening on multiaddr(s): ",
-//   server.getMultiaddrs().map((ma) => ma.toString())
-// );
-// console.log(
-//   `Public relay multiaddr: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
-// );
-// console.log("Relay server with GossipSub discovery hub is now active");
+// Create a health check server
+const healthServer = http.createServer((req, res) => {
+  if (req.url === "/health") {
+    const memoryUsage = process.memoryUsage();
+    const connectedPeersCount = connectedPeers.size;
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        status: "ok",
+        connectedPeers: connectedPeersCount,
+        memoryUsage: {
+          rss: memoryUsage.rss / 1024 / 1024, // Convert to MB
+          heapUsed: memoryUsage.heapUsed / 1024 / 1024,
+          heapTotal: memoryUsage.heapTotal / 1024 / 1024,
+        },
+      })
+    );
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+// Start the health check server
+const HEALTH_PORT = process.env.HEALTH_PORT || 8080;
+healthServer.listen(HEALTH_PORT, () => {
+  console.log(
+    `Health check server running at http://localhost:${HEALTH_PORT}/health`
+  );
+});
+
 console.log(
   `Your relay is publicly accessible at: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
 );
