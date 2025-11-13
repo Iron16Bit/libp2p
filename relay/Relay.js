@@ -25,12 +25,12 @@ console.log(`Relay peer ID: ${peerId.toString()}`);
 
 // Keep track of connected peers and their topics
 const connectedPeers = new Map();
-const topicPeers = new Map(); // topic -> Set of peer IDs
-const peerLastSeen = new Map(); // peerId -> timestamp
+const topicPeers = new Map(); /
+const peerLastSeen = new Map(); 
 
 // Track discovery messages to prevent spam
-const recentDiscoveryMessages = new Map(); // peerId -> timestamp
-const DISCOVERY_COOLDOWN = 5000; // 5 seconds between discovery messages
+const recentDiscoveryMessages = new Map(); /
+const DISCOVERY_COOLDOWN = 5000; 
 
 // Use static peer ID for the relay server
 const privateKey = await PeerIdManager.getPrivateKey("./peer-id.key");
@@ -48,16 +48,16 @@ const server = await createLibp2p({
   connectionEncrypters: [noise()],
   streamMuxers: [yamux()],
   connectionManager: {
-    maxConnections: 100, // Limit total connections
+    maxConnections: 100, 
     minConnections: 0,
-    maxIncomingPendingConnections: 10, // Prevent flood of new connections
+    maxIncomingPendingConnections: 10, 
   },
   services: {
     identify: identify(),
     relay: circuitRelayServer({
       reservations: {
-        maxReservations: 50, // Increased from 20
-        reservationTTL: 30000, // Reduced from 60s to 30s
+        maxReservations: 50, 
+        reservationTTL: 30000, 
         reservationCompletionTimeout: 10000,
       },
       maxInboundCircuits: 50,
@@ -79,7 +79,7 @@ const server = await createLibp2p({
       dScore: 2,
       dOut: 1,
       dLazy: 4,
-      heartbeatInterval: 2000, // More frequent heartbeats to detect dead peers
+      heartbeatInterval: 2000, 
     }),
   },
 });
@@ -126,7 +126,7 @@ server.addEventListener("peer:disconnect", (event) => {
 // Cleanup stale peers periodically
 setInterval(() => {
   const now = Date.now();
-  const STALE_TIMEOUT = 60000; // 60 seconds
+  const STALE_TIMEOUT = 60000; 
   let cleaned = 0;
 
   // Check for stale peers in topicPeers
@@ -171,19 +171,10 @@ setInterval(() => {
     console.log(`Cleaned up ${cleaned} stale peer entries`);
   }
 
-  // Log memory usage
-  const memUsage = process.memoryUsage();
-  console.log(
-    `Memory: RSS ${(memUsage.rss / 1024 / 1024).toFixed(2)}MB, Heap ${(
-      memUsage.heapUsed /
-      1024 /
-      1024
-    ).toFixed(2)}MB`
-  );
   console.log(
     `Active topics: ${topicPeers.size}, Connected peers: ${connectedPeers.size}`
   );
-}, 30000); // Run every 30 seconds
+}, 30000); 
 
 // Track topic subscriptions and facilitate peer discovery
 server.services.pubsub.addEventListener(
@@ -192,14 +183,12 @@ server.services.pubsub.addEventListener(
     const { peerId: subscribingPeer, subscriptions } = event.detail;
 
     console.log(
-      `[RELAY] 🔍 Subscription change from ${subscribingPeer
+      `[RELAY] Subscription change from ${subscribingPeer
         .toString()
         .slice(0, 8)}`
     );
     subscriptions.forEach((s) => {
-      console.log(
-        `[RELAY]    ${s.subscribe ? "✅ SUB" : "❌ UNSUB"}: ${s.topic}`
-      );
+      console.log(`[RELAY]    ${s.subscribe ? "SUB" : "UNSUB"}: ${s.topic}`);
     });
 
     for (const { topic, subscribe } of subscriptions) {
@@ -209,7 +198,7 @@ server.services.pubsub.addEventListener(
           continue;
         }
 
-        console.log(`[RELAY] 📝 Processing subscription to: ${topic}`);
+        console.log(`[RELAY] Processing subscription to: ${topic}`);
 
         // Update last seen
         peerLastSeen.set(subscribingPeer.toString(), Date.now());
@@ -221,12 +210,12 @@ server.services.pubsub.addEventListener(
         topicPeers.get(topic).add(subscribingPeer.toString());
 
         console.log(
-          `[RELAY] 👥 Peer ${subscribingPeer
+          `[RELAY] Peer ${subscribingPeer
             .toString()
             .slice(0, 8)} subscribed to '${topic}'`
         );
         console.log(
-          `[RELAY] 👥 Total peers on this topic: ${topicPeers.get(topic).size}`
+          `[RELAY] Total peers on this topic: ${topicPeers.get(topic).size}`
         );
 
         // Get existing peers in this topic (excluding the new subscriber)
@@ -236,7 +225,7 @@ server.services.pubsub.addEventListener(
         );
 
         console.log(
-          `[RELAY] 📢 Will notify about ${existingPeers.length} existing peers`
+          `[RELAY] Will notify about ${existingPeers.length} existing peers`
         );
 
         // Rate limit discovery messages
@@ -246,7 +235,7 @@ server.services.pubsub.addEventListener(
 
         if (lastDiscovery && now - lastDiscovery < DISCOVERY_COOLDOWN) {
           console.log(
-            `[RELAY] ⏸️  Rate limiting discovery for ${peerIdStr.slice(0, 8)}`
+            `[RELAY] Rate limiting discovery for ${peerIdStr.slice(0, 8)}`
           );
           continue;
         }
@@ -254,7 +243,7 @@ server.services.pubsub.addEventListener(
         if (existingPeers.length > 0) {
           recentDiscoveryMessages.set(peerIdStr, now);
 
-          // Send discovery message DIRECTLY on the topic the peer just subscribed to
+          // Send discovery message directly on the topic the peer just subscribed to
           const discoveryMessage = {
             type: "relay-discovery",
             relayId: server.peerId.toString(),
@@ -274,17 +263,14 @@ server.services.pubsub.addEventListener(
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
             console.log(
-              `[RELAY] ✅ Sent discovery to topic ${topic} with ${existingPeers.length} peers`
+              `[RELAY] Sent discovery to topic ${topic} with ${existingPeers.length} peers`
             );
           } catch (error) {
-            console.error(
-              `[RELAY] ❌ Failed to send discovery message:`,
-              error
-            );
+            console.error(`[RELAY] Failed to send discovery message:`, error);
           }
         } else {
           console.log(
-            `[RELAY] ℹ️  No existing peers to notify about on topic ${topic}`
+            `[RELAY] No existing peers to notify about on topic ${topic}`
           );
         }
       } else {
@@ -295,7 +281,7 @@ server.services.pubsub.addEventListener(
             topicPeers.delete(topic);
           }
           console.log(
-            `[RELAY] 👋 Peer ${subscribingPeer
+            `[RELAY] Peer ${subscribingPeer
               .toString()
               .slice(0, 8)} unsubscribed from '${topic}'`
           );
@@ -304,39 +290,6 @@ server.services.pubsub.addEventListener(
     }
   }
 );
-
-// // Create a health check server
-// const healthServer = http.createServer((req, res) => {
-//   if (req.url === "/health") {
-//     const memoryUsage = process.memoryUsage();
-//     const connectedPeersCount = connectedPeers.size;
-
-//     res.writeHead(200, { "Content-Type": "application/json" });
-//     res.end(
-//       JSON.stringify({
-//         status: "ok",
-//         connectedPeers: connectedPeersCount,
-//         activeTopics: topicPeers.size,
-//         memoryUsage: {
-//           rss: memoryUsage.rss / 1024 / 1024,
-//           heapUsed: memoryUsage.heapUsed / 1024 / 1024,
-//           heapTotal: memoryUsage.heapTotal / 1024 / 1024,
-//         },
-//       })
-//     );
-//   } else {
-//     res.writeHead(404);
-//     res.end();
-//   }
-// });
-
-// // Start the health check server
-// const HEALTH_PORT = process.env.HEALTH_PORT || 8080;
-// healthServer.listen(HEALTH_PORT, () => {
-//   console.log(
-//     `Health check server running at http://localhost:${HEALTH_PORT}/health`
-//   );
-// });
 
 console.log(
   `Your relay is publicly accessible at: /ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}`
