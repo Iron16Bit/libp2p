@@ -234,6 +234,10 @@ server.services.pubsub.addEventListener(
             relayId: server.peerId.toString(),
             peers: existingPeers.map((peerId) => ({
               peerId: peerId,
+              // Include circuit relay address so peers can dial each other through the relay
+              multiaddrs: [
+                `/ip4/${PUBLIC_IP}/tcp/${LIBP2P_PORT}/ws/p2p/${server.peerId.toString()}/p2p-circuit/p2p/${peerId}`,
+              ],
             })),
           };
 
