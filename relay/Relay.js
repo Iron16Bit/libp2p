@@ -240,16 +240,18 @@ server.services.pubsub.addEventListener(
             topic: topic,
             peers: existingPeers.map((peerId) => {
               const connections = server.getConnections(peerId);
+              // Send both direct multiaddrs AND circuit relay fallback
+              const directAddrs =
+                connections.length > 0
+                  ? connections.map((conn) => conn.remoteAddr.toString())
+                  : [];
+
               return {
                 peerId: peerId,
-                multiaddrs:
-                  connections.length > 0
-                    ? connections.map((conn) => conn.remoteAddr.toString())
-                    : [
-                        `${
-                          server.getMultiaddrs()[0]
-                        }/p2p-circuit/p2p/${peerId}`,
-                      ],
+                multiaddrs: [
+                  ...directAddrs, // Include direct addresses first
+                  `${server.getMultiaddrs()[0]}/p2p-circuit/p2p/${peerId}`,
+                ],
               };
             }),
           };
