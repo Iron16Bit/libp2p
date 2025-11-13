@@ -193,12 +193,8 @@ server.services.pubsub.addEventListener(
 
     for (const { topic, subscribe } of subscriptions) {
       if (subscribe) {
-        // Skip discovery topics AND session topics - relay should not subscribe
-        if (
-          topic.startsWith("__discovery__") ||
-          topic.startsWith("icp.session.")
-        ) {
-          console.log(`Relay ignoring topic: ${topic}`);
+        // Skip internal discovery topics
+        if (topic.startsWith("__discovery__")) {
           continue;
         }
 
@@ -232,60 +228,26 @@ server.services.pubsub.addEventListener(
         if (existingPeers.length > 0) {
           recentDiscoveryMessages.set(peerIdStr, now);
 
-          // Send discovery message to the new subscriber about existing peers
+          // Send discovery message DIRECTLY on the topic the peer just subscribed to
           const discoveryMessage = {
-            type: "peer-discovery",
-            topic: topic,
-            peers: existingPeers.map((peerId) => {
-              return {
-                peerId: peerId,
-                multiaddrs: [], // Browser will get multiaddrs from libp2p peer store
-              };
-            }),
+            type: "relay-discovery",
+            relayId: server.peerId.toString(),
+            peers: existingPeers.map((peerId) => ({
+              peerId: peerId,
+            })),
           };
 
           try {
-            // Create a special discovery topic for this peer
-            const discoveryTopic = `__discovery__${subscribingPeer.toString()}`;
+            // Send on the SAME topic, not a separate discovery topic
             await server.services.pubsub.publish(
-              discoveryTopic,
+              topic,
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
             console.log(
-              `Sent discovery message to ${subscribingPeer} with ${existingPeers.length} peer IDs`
+              `Sent discovery to topic ${topic} with ${existingPeers.length} peers`
             );
           } catch (error) {
             console.error(`Failed to send discovery message:`, error);
-          }
-
-          // Also notify existing peers about the new peer
-          const newPeerMessage = {
-            type: "new-peer",
-            topic: topic,
-            peer: {
-              peerId: subscribingPeer.toString(),
-              multiaddrs: [], // Browser will get multiaddrs from libp2p peer store
-            },
-          };
-
-          for (const existingPeerId of existingPeers) {
-            const lastNotified = recentDiscoveryMessages.get(
-              `notify_${existingPeerId}`
-            );
-            if (lastNotified && now - lastNotified < DISCOVERY_COOLDOWN) {
-              continue;
-            }
-
-            try {
-              const notifyTopic = `__discovery__${existingPeerId}`;
-              await server.services.pubsub.publish(
-                notifyTopic,
-                new TextEncoder().encode(JSON.stringify(newPeerMessage))
-              );
-              recentDiscoveryMessages.set(`notify_${existingPeerId}`, now);
-            } catch (error) {
-              // Nothing
-            }
           }
         }
       } else {
