@@ -25,11 +25,11 @@ console.log(`Relay peer ID: ${peerId.toString()}`);
 
 // Keep track of connected peers and their topics
 const connectedPeers = new Map();
-const topicPeers = new Map(); /
+const topicPeers = new Map(); 
 const peerLastSeen = new Map(); 
 
 // Track discovery messages to prevent spam
-const recentDiscoveryMessages = new Map(); /
+const recentDiscoveryMessages = new Map(); 
 const DISCOVERY_COOLDOWN = 5000; 
 
 // Use static peer ID for the relay server
