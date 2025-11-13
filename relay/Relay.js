@@ -193,8 +193,12 @@ server.services.pubsub.addEventListener(
 
     for (const { topic, subscribe } of subscriptions) {
       if (subscribe) {
-        // Skip discovery topics - relay doesn't need to subscribe to these
-        if (topic.startsWith("__discovery__")) {
+        // Skip discovery topics AND session topics - relay should not subscribe
+        if (
+          topic.startsWith("__discovery__") ||
+          topic.startsWith("icp.session.")
+        ) {
+          console.log(`Relay ignoring topic: ${topic}`);
           continue;
         }
 
@@ -204,12 +208,6 @@ server.services.pubsub.addEventListener(
         // Peer subscribed to a topic
         if (!topicPeers.has(topic)) {
           topicPeers.set(topic, new Set());
-          // Relay subscribes to the topic to help with message routing
-          try {
-            server.services.pubsub.subscribe(topic);
-          } catch (error) {
-            // Nothing?
-          }
         }
         topicPeers.get(topic).add(subscribingPeer.toString());
 
@@ -218,7 +216,7 @@ server.services.pubsub.addEventListener(
         // Get existing peers in this topic (excluding the new subscriber)
         const existingPeers = Array.from(topicPeers.get(topic)).filter(
           (peerId) =>
-            peerId !== subscribingPeer.toString() && connectedPeers.has(peerId) // Only include actually connected peers
+            peerId !== subscribingPeer.toString() && connectedPeers.has(peerId)
         );
 
         // Rate limit discovery messages
@@ -228,7 +226,7 @@ server.services.pubsub.addEventListener(
 
         if (lastDiscovery && now - lastDiscovery < DISCOVERY_COOLDOWN) {
           console.log(`Rate limiting discovery for ${peerIdStr}`);
-          continue; // Skip sending discovery message
+          continue;
         }
 
         if (existingPeers.length > 0) {
@@ -239,19 +237,9 @@ server.services.pubsub.addEventListener(
             type: "peer-discovery",
             topic: topic,
             peers: existingPeers.map((peerId) => {
-              const connections = server.getConnections(peerId);
-              // Send both direct multiaddrs AND circuit relay fallback
-              const directAddrs =
-                connections.length > 0
-                  ? connections.map((conn) => conn.remoteAddr.toString())
-                  : [];
-
               return {
                 peerId: peerId,
-                multiaddrs: [
-                  ...directAddrs, // Include direct addresses first
-                  `${server.getMultiaddrs()[0]}/p2p-circuit/p2p/${peerId}`,
-                ],
+                multiaddrs: [], // Browser will get multiaddrs from libp2p peer store
               };
             }),
           };
@@ -264,23 +252,19 @@ server.services.pubsub.addEventListener(
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
             console.log(
-              `Sent discovery message to ${subscribingPeer} with ${existingPeers.length} peers`
+              `Sent discovery message to ${subscribingPeer} with ${existingPeers.length} peer IDs`
             );
           } catch (error) {
             console.error(`Failed to send discovery message:`, error);
           }
 
-          // Also notify existing peers about the new peer (with rate limiting)
+          // Also notify existing peers about the new peer
           const newPeerMessage = {
             type: "new-peer",
             topic: topic,
             peer: {
               peerId: subscribingPeer.toString(),
-              multiaddrs: [
-                `${
-                  server.getMultiaddrs()[0]
-                }/p2p-circuit/p2p/${subscribingPeer.toString()}`,
-              ],
+              multiaddrs: [], // Browser will get multiaddrs from libp2p peer store
             },
           };
 
@@ -289,7 +273,7 @@ server.services.pubsub.addEventListener(
               `notify_${existingPeerId}`
             );
             if (lastNotified && now - lastNotified < DISCOVERY_COOLDOWN) {
-              continue; // Skip if we recently notified this peer
+              continue;
             }
 
             try {
@@ -300,7 +284,7 @@ server.services.pubsub.addEventListener(
               );
               recentDiscoveryMessages.set(`notify_${existingPeerId}`, now);
             } catch (error) {
-              // Nothing ?
+              // Nothing
             }
           }
         }
@@ -310,13 +294,6 @@ server.services.pubsub.addEventListener(
           topicPeers.get(topic).delete(subscribingPeer.toString());
           if (topicPeers.get(topic).size === 0) {
             topicPeers.delete(topic);
-            // Unsubscribe relay from empty topics
-            try {
-              server.services.pubsub.unsubscribe(topic);
-              console.log(`Relay unsubscribed from empty topic: ${topic}`);
-            } catch (e) {
-              // Ignore
-            }
           }
           console.log(
             `Peer ${subscribingPeer} unsubscribed from topic '${topic}'`
