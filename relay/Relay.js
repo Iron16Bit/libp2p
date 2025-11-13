@@ -191,12 +191,25 @@ server.services.pubsub.addEventListener(
   async (event) => {
     const { peerId: subscribingPeer, subscriptions } = event.detail;
 
+    console.log(
+      `[RELAY] 🔍 Subscription change from ${subscribingPeer
+        .toString()
+        .slice(0, 8)}`
+    );
+    subscriptions.forEach((s) => {
+      console.log(
+        `[RELAY]    ${s.subscribe ? "✅ SUB" : "❌ UNSUB"}: ${s.topic}`
+      );
+    });
+
     for (const { topic, subscribe } of subscriptions) {
       if (subscribe) {
         // Skip internal discovery topics
         if (topic.startsWith("__discovery__")) {
           continue;
         }
+
+        console.log(`[RELAY] 📝 Processing subscription to: ${topic}`);
 
         // Update last seen
         peerLastSeen.set(subscribingPeer.toString(), Date.now());
@@ -207,12 +220,23 @@ server.services.pubsub.addEventListener(
         }
         topicPeers.get(topic).add(subscribingPeer.toString());
 
-        console.log(`Peer ${subscribingPeer} subscribed to topic '${topic}'`);
+        console.log(
+          `[RELAY] 👥 Peer ${subscribingPeer
+            .toString()
+            .slice(0, 8)} subscribed to '${topic}'`
+        );
+        console.log(
+          `[RELAY] 👥 Total peers on this topic: ${topicPeers.get(topic).size}`
+        );
 
         // Get existing peers in this topic (excluding the new subscriber)
         const existingPeers = Array.from(topicPeers.get(topic)).filter(
           (peerId) =>
             peerId !== subscribingPeer.toString() && connectedPeers.has(peerId)
+        );
+
+        console.log(
+          `[RELAY] 📢 Will notify about ${existingPeers.length} existing peers`
         );
 
         // Rate limit discovery messages
@@ -221,7 +245,9 @@ server.services.pubsub.addEventListener(
         const now = Date.now();
 
         if (lastDiscovery && now - lastDiscovery < DISCOVERY_COOLDOWN) {
-          console.log(`Rate limiting discovery for ${peerIdStr}`);
+          console.log(
+            `[RELAY] ⏸️  Rate limiting discovery for ${peerIdStr.slice(0, 8)}`
+          );
           continue;
         }
 
@@ -248,11 +274,18 @@ server.services.pubsub.addEventListener(
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
             console.log(
-              `Sent discovery to topic ${topic} with ${existingPeers.length} peers`
+              `[RELAY] ✅ Sent discovery to topic ${topic} with ${existingPeers.length} peers`
             );
           } catch (error) {
-            console.error(`Failed to send discovery message:`, error);
+            console.error(
+              `[RELAY] ❌ Failed to send discovery message:`,
+              error
+            );
           }
+        } else {
+          console.log(
+            `[RELAY] ℹ️  No existing peers to notify about on topic ${topic}`
+          );
         }
       } else {
         // Peer unsubscribed from a topic
@@ -262,7 +295,9 @@ server.services.pubsub.addEventListener(
             topicPeers.delete(topic);
           }
           console.log(
-            `Peer ${subscribingPeer} unsubscribed from topic '${topic}'`
+            `[RELAY] 👋 Peer ${subscribingPeer
+              .toString()
+              .slice(0, 8)} unsubscribed from '${topic}'`
           );
         }
       }
