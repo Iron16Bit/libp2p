@@ -12,6 +12,7 @@ import { createEd25519PeerId } from "@libp2p/peer-id-factory";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { PeerIdManager } from "./PeerIdManager.ts";
 import http from "http";
+import { logger } from "./logger.js";
 
 // Load environment variables from .env file
 config();
@@ -21,16 +22,16 @@ const LIBP2P_PORT = process.env.LIBP2P_PORT || 4003;
 
 // Create peer ID
 const peerId = await createEd25519PeerId();
-console.log(`Relay peer ID: ${peerId.toString()}`);
+logger.info(`Relay peer ID: ${peerId.toString()}`);
 
 // Keep track of connected peers and their topics
 const connectedPeers = new Map();
-const topicPeers = new Map(); 
-const peerLastSeen = new Map(); 
+const topicPeers = new Map();
+const peerLastSeen = new Map();
 
 // Track discovery messages to prevent spam
-const recentDiscoveryMessages = new Map(); 
-const DISCOVERY_COOLDOWN = 5000; 
+const recentDiscoveryMessages = new Map();
+const DISCOVERY_COOLDOWN = 5000;
 
 // Use static peer ID for the relay server
 const privateKey = await PeerIdManager.getPrivateKey("./peer-id.key");
@@ -48,16 +49,16 @@ const server = await createLibp2p({
   connectionEncrypters: [noise()],
   streamMuxers: [yamux()],
   connectionManager: {
-    maxConnections: 100, 
+    maxConnections: 100,
     minConnections: 0,
-    maxIncomingPendingConnections: 10, 
+    maxIncomingPendingConnections: 10,
   },
   services: {
     identify: identify(),
     relay: circuitRelayServer({
       reservations: {
-        maxReservations: 50, 
-        reservationTTL: 30000, 
+        maxReservations: 50,
+        reservationTTL: 30000,
         reservationCompletionTimeout: 10000,
       },
       maxInboundCircuits: 50,
@@ -79,7 +80,7 @@ const server = await createLibp2p({
       dScore: 2,
       dOut: 1,
       dLazy: 4,
-      heartbeatInterval: 2000, 
+      heartbeatInterval: 2000,
     }),
   },
 });
@@ -94,8 +95,8 @@ server.addEventListener("peer:connect", (event) => {
   };
   connectedPeers.set(peerId, peerInfo);
   peerLastSeen.set(peerId, Date.now());
-  console.log(`Peer connected: ${peerId}`);
-  console.log(`Total connected peers: ${connectedPeers.size}`);
+  logger.info(`Peer connected: ${peerId}`);
+  logger.info(`Total connected peers: ${connectedPeers.size}`);
 });
 
 server.addEventListener("peer:disconnect", (event) => {
@@ -112,21 +113,21 @@ server.addEventListener("peer:disconnect", (event) => {
       // Unsubscribe relay from empty topics to save resources
       try {
         server.services.pubsub.unsubscribe(topic);
-        console.log(`Relay unsubscribed from empty topic: ${topic}`);
+        logger.info(`Relay unsubscribed from empty topic: ${topic}`);
       } catch (e) {
         // Ignore errors
       }
     }
   }
 
-  console.log(`Peer disconnected: ${peerId}`);
-  console.log(`Total connected peers: ${connectedPeers.size}`);
+  logger.info(`Peer disconnected: ${peerId}`);
+  logger.info(`Total connected peers: ${connectedPeers.size}`);
 });
 
 // Cleanup stale peers periodically
 setInterval(() => {
   const now = Date.now();
-  const STALE_TIMEOUT = 60000; 
+  const STALE_TIMEOUT = 60000;
   let cleaned = 0;
 
   // Check for stale peers in topicPeers
@@ -153,7 +154,7 @@ setInterval(() => {
       topicPeers.delete(topic);
       try {
         server.services.pubsub.unsubscribe(topic);
-        console.log(`Cleaned up empty topic: ${topic}`);
+        logger.info(`Cleaned up empty topic: ${topic}`);
       } catch (e) {
         // Ignore
       }
@@ -168,13 +169,13 @@ setInterval(() => {
   }
 
   if (cleaned > 0) {
-    console.log(`Cleaned up ${cleaned} stale peer entries`);
+    logger.info(`Cleaned up ${cleaned} stale peer entries`);
   }
 
-  console.log(
+  logger.info(
     `Active topics: ${topicPeers.size}, Connected peers: ${connectedPeers.size}`
   );
-}, 30000); 
+}, 30000);
 
 // Track topic subscriptions and facilitate peer discovery
 server.services.pubsub.addEventListener(
@@ -182,13 +183,13 @@ server.services.pubsub.addEventListener(
   async (event) => {
     const { peerId: subscribingPeer, subscriptions } = event.detail;
 
-    console.log(
+    logger.info(
       `[RELAY] Subscription change from ${subscribingPeer
         .toString()
         .slice(0, 8)}`
     );
     subscriptions.forEach((s) => {
-      console.log(`[RELAY]    ${s.subscribe ? "SUB" : "UNSUB"}: ${s.topic}`);
+      logger.info(`[RELAY]    ${s.subscribe ? "SUB" : "UNSUB"}: ${s.topic}`);
     });
 
     for (const { topic, subscribe } of subscriptions) {
@@ -198,7 +199,7 @@ server.services.pubsub.addEventListener(
           continue;
         }
 
-        console.log(`[RELAY] Processing subscription to: ${topic}`);
+        logger.info(`[RELAY] Processing subscription to: ${topic}`);
 
         // Update last seen
         peerLastSeen.set(subscribingPeer.toString(), Date.now());
@@ -209,12 +210,12 @@ server.services.pubsub.addEventListener(
         }
         topicPeers.get(topic).add(subscribingPeer.toString());
 
-        console.log(
+        logger.info(
           `[RELAY] Peer ${subscribingPeer
             .toString()
             .slice(0, 8)} subscribed to '${topic}'`
         );
-        console.log(
+        logger.info(
           `[RELAY] Total peers on this topic: ${topicPeers.get(topic).size}`
         );
 
@@ -224,7 +225,7 @@ server.services.pubsub.addEventListener(
             peerId !== subscribingPeer.toString() && connectedPeers.has(peerId)
         );
 
-        console.log(
+        logger.info(
           `[RELAY] Will notify about ${existingPeers.length} existing peers`
         );
 
@@ -234,7 +235,7 @@ server.services.pubsub.addEventListener(
         const now = Date.now();
 
         if (lastDiscovery && now - lastDiscovery < DISCOVERY_COOLDOWN) {
-          console.log(
+          logger.info(
             `[RELAY] Rate limiting discovery for ${peerIdStr.slice(0, 8)}`
           );
           continue;
@@ -262,14 +263,14 @@ server.services.pubsub.addEventListener(
               topic,
               new TextEncoder().encode(JSON.stringify(discoveryMessage))
             );
-            console.log(
+            logger.info(
               `[RELAY] Sent discovery to topic ${topic} with ${existingPeers.length} peers`
             );
           } catch (error) {
-            console.error(`[RELAY] Failed to send discovery message:`, error);
+            logger.error(`[RELAY] Failed to send discovery message:`, error);
           }
         } else {
-          console.log(
+          logger.info(
             `[RELAY] No existing peers to notify about on topic ${topic}`
           );
         }
@@ -280,7 +281,7 @@ server.services.pubsub.addEventListener(
           if (topicPeers.get(topic).size === 0) {
             topicPeers.delete(topic);
           }
-          console.log(
+          logger.info(
             `[RELAY] Peer ${subscribingPeer
               .toString()
               .slice(0, 8)} unsubscribed from '${topic}'`

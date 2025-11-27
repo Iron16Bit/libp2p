@@ -28,27 +28,4 @@ When you first run the relay, it will output something like:
 Your relay is publicly accessible at: /ip4/YOUR_IP/tcp/PORT/ws/p2p/12D3KooWXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-Copy the whole address for the next step.
-
-## Step 4: Update the Client Configuration
-
-Edit `peer.js` and paste the relay's multiaddress:
-
-```javascript
-const relayAddr = ``;
-```
-
-## Notes
-
-The hosting has been tested on a simple, always-free, Oracle VM with:
-- Canonical-Ubuntu-20.04-Minimal-2025.07.23-0
-- 1 CPU core of an AMD EPYC 7742 64-Core Processor
-Such environment was prone to crashes, which have been handled through the `watchdog.sh`. To use it to automatically restart the server in case of crash, you need to install `screen` and `cron`. Once they've been installed, set the path variables at the top of the watchdog and then use:
-
-`crontab -e`
-
-And add at the bottom:
-
-`*/1 * * * * PATH_TO/watchdog.sh`
-
-In this case all outputs will be found in the path specified as `LOG_FILE`
+That is the address of your Relay Server!
