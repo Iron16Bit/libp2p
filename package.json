@@ -1,47 +1,30 @@
 {
-  "name": "@libp2p/example-browser-pubsub-workspace",
+  "name": "@libp2p/relay-server",
   "version": "1.0.0",
-  "description": "LibP2P browser pubsub example with modular relay/peer architecture",
-  "license": "Apache-2.0 OR MIT",
-  "homepage": "https://github.com/libp2p/js-libp2p-example-browser-pubsub#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/libp2p/js-libp2p-examples.git"
-  },
-  "bugs": {
-    "url": "https://github.com/libp2p/js-libp2p-examples/issues"
-  },
+  "description": "LibP2P relay server with peer discovery API",
   "type": "module",
-  "private": true,
-  "workspaces": [
-    "relay",
-    "peer"
-  ],
+  "main": "Relay.js",
   "scripts": {
-    "install:relay": "cd relay && npm install",
-    "install:peer": "cd peer && npm install", 
-    "install:all": "npm run install:relay && npm run install:peer",
-    "start:relay": "cd relay && npm start",
-    "start:peer": "cd peer && npm start",
-    "start": "concurrently \"npm run start:relay\" \"npm run start:peer\"",
-    "clean": "rm -rf relay/node_modules peer/node_modules",
-    "build": "cd peer && npm run build",
-    "setup": "node setup.js",
-    "deploy": "npm run setup && echo 'Ready for deployment! See DEPLOYMENT.md for next steps.'",
-    "test:firefox": "npm run build && playwright test --browser=firefox test",
-    "test:chrome": "npm run build && playwright test test",
-    "test": "npm run build && test-browser-example test"
+    "start": "node Relay.js",
+    "dev": "node Relay.js"
   },
-  "devDependencies": {
-    "concurrently": "^9.0.1",
-    "test-ipfs-example": "^1.0.0"
+  "dependencies": {
+    "@chainsafe/libp2p-gossipsub": "^14.0.0",
+    "@chainsafe/libp2p-noise": "^16.0.0",
+    "@chainsafe/libp2p-yamux": "^7.0.0",
+    "@libp2p/circuit-relay-v2": "^3.0.0",
+    "@libp2p/identify": "^3.0.0",
+    "@libp2p/interface": "^2.11.0",
+    "@libp2p/peer-id-factory": "^4.2.4",
+    "@libp2p/websockets": "^9.0.0",
+    "dotenv": "^16.4.5",
+    "libp2p": "^2.0.0"
   },
   "keywords": [
     "libp2p",
+    "relay",
     "peer-to-peer",
-    "browser",
-    "pubsub",
-    "webrtc",
-    "relay"
-  ]
+    "websocket"
+  ],
+  "license": "Apache-2.0 OR MIT"
 }
